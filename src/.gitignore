@@ -1,0 +1,12 @@
+# Dependencias del Backend
+node_modules/
+
+# Archivos de entorno y seguridad
+.env
+
+# Imágenes temporales locales (¡MUY IMPORTANTE!)
+uploads/
+
+# Logs
+*.log
+npm-debug.log*
