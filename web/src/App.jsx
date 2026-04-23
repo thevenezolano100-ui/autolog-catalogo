@@ -17,12 +17,12 @@ function App() {
 
   const cargarDatos = async () => {
     try {
-      const resProds = await fetch('http://127.0.0.1:3000/api/productos');
+      const resProds = await fetch('https://autolog-catalogo.onrender.com/api/productos');
       const dataProds = await resProds.json();
       const unicos = dataProds.filter((v, i, a) => a.findIndex(t => (t.id === v.id)) === i);
       setProductos(unicos);
 
-      const resMarcas = await fetch('http://127.0.0.1:3000/api/marcas');
+      const resMarcas = await fetch('https://autolog-catalogo.onrender.com/api/marcas');
       setMarcas(await resMarcas.json());
     } catch (err) { console.error("Error de conexión:", err); }
   };

@@ -7,7 +7,7 @@ function Login({ alEntrar }) {
 
   const manejarLogin = async (e) => {
     e.preventDefault();
-    const respuesta = await fetch('http://127.0.0.1:3000/api/login', {
+    const respuesta = await fetch('https://autolog-catalogo.onrender.com/api/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ usuario, password })

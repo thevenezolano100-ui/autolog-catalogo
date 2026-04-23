@@ -6,7 +6,7 @@ function BuscadorVehiculo({ alEncontrar, alLimpiar }) {
   const [seleccion, setSeleccion] = useState({ marca: '', modelo: '' });
 
   useEffect(() => {
-    fetch('http://127.0.0.1:3000/api/vehiculos/marcas')
+    fetch('https://autolog-catalogo.onrender.com/api/vehiculos/marcas')
       .then(res => res.json())
       .then(data => setMarcas(data))
       .catch(err => console.error("Error cargando marcas de autos:", err));
@@ -17,7 +17,7 @@ function BuscadorVehiculo({ alEncontrar, alLimpiar }) {
     setSeleccion({ marca, modelo: '' });
     
     if (marca) {
-        fetch(`http://127.0.0.1:3000/api/vehiculos/modelos/${marca}`)
+        fetch(`https://autolog-catalogo.onrender.com/api/vehiculos/modelos/${marca}`)
         .then(res => res.json())
         .then(data => setModelos(data));
     } else {
@@ -26,7 +26,7 @@ function BuscadorVehiculo({ alEncontrar, alLimpiar }) {
   };
 
   const buscar = () => {
-    fetch(`http://127.0.0.1:3000/api/buscar-por-vehiculo?marca=${seleccion.marca}&modelo=${seleccion.modelo}`)
+    fetch(`https://autolog-catalogo.onrender.com/api/buscar-por-vehiculo?marca=${seleccion.marca}&modelo=${seleccion.modelo}`)
       .then(res => res.json())
       .then(data => alEncontrar(data));
   };

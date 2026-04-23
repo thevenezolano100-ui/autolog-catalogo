@@ -33,10 +33,10 @@ function Admin() {
 
   const cargarDatosBasicos = async () => {
     try {
-      const resCat = await fetch('http://127.0.0.1:3000/api/categorias'); setCategoriasLista(await resCat.json());
-      const resMar = await fetch('http://127.0.0.1:3000/api/marcas'); setMarcasLista(await resMar.json());
-      const resVeh = await fetch('http://127.0.0.1:3000/api/vehiculos'); setVehiculosLista(await resVeh.json());
-      const resInv = await fetch('http://127.0.0.1:3000/api/productos'); setInventario(await resInv.json());
+      const resCat = await fetch('https://autolog-catalogo.onrender.com/api/categorias'); setCategoriasLista(await resCat.json());
+      const resMar = await fetch('https://autolog-catalogo.onrender.com/api/marcas'); setMarcasLista(await resMar.json());
+      const resVeh = await fetch('https://autolog-catalogo.onrender.com/api/vehiculos'); setVehiculosLista(await resVeh.json());
+      const resInv = await fetch('https://autolog-catalogo.onrender.com/api/productos'); setInventario(await resInv.json());
 
       if(!repuestoEditando && formulario.categoria_id === '') {
         setFormulario(prev => ({ ...prev, categoria_id: categoriasLista[0]?.id || '', marca_id: marcasLista[0]?.id || '' }));
@@ -47,7 +47,7 @@ function Admin() {
   // FUNCIÓN CORREGIDA: Ya no depende del Login.jsx
   const cargarDatosPerfil = async () => {
     try {
-        const res = await fetch('http://127.0.0.1:3000/api/usuario-admin');
+        const res = await fetch('https://autolog-catalogo.onrender.com/api/usuario-admin');
         const data = await res.json();
         if(data) {
             setPerfil({ id: data.id, nombre_usuario: data.nombre_usuario, contrasena: '' });
@@ -78,7 +78,7 @@ function Admin() {
     datos.append('vehiculos_compatibles', JSON.stringify(formulario.vehiculos_compatibles));
     if (imagenArchivo) datos.append('imagen', imagenArchivo);
 
-    const url = repuestoEditando ? `http://127.0.0.1:3000/api/productos/${formulario.id}` : 'http://127.0.0.1:3000/api/productos';
+    const url = repuestoEditando ? `https://autolog-catalogo.onrender.com/api/productos/${formulario.id}` : 'https://autolog-catalogo.onrender.com/api/productos';
     const metodo = repuestoEditando ? 'PUT' : 'POST';
 
     try {
@@ -101,18 +101,18 @@ function Admin() {
     setFormulario({ id: null, codigo_pieza: '', descripcion: '', marca_id: marcasLista[0]?.id, categoria_id: categoriasLista[0]?.id, imagen_url_actual: '', vehiculos_compatibles: [] });
     setRepuestoEditando(false); setImagenArchivo(null); document.getElementById('inputImagen').value = '';
   };
-  const eliminarRepuesto = async (id, codigo) => { if (window.confirm(`¿Borrar repuesto ${codigo}?`)) { await fetch(`http://127.0.0.1:3000/api/productos/${id}`, { method: 'DELETE' }); cargarDatosBasicos(); } };
+  const eliminarRepuesto = async (id, codigo) => { if (window.confirm(`¿Borrar repuesto ${codigo}?`)) { await fetch(`https://autolog-catalogo.onrender.com/api/productos/${id}`, { method: 'DELETE' }); cargarDatosBasicos(); } };
 
   // --- FUNCIONES DE MARCAS ---
   const guardarMarca = async (e) => {
     e.preventDefault();
-    if (marcaEditando) await fetch(`http://127.0.0.1:3000/api/marcas/${marcaEditando}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nombre: nuevaMarca }) });
-    else await fetch('http://127.0.0.1:3000/api/marcas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nombre: nuevaMarca }) });
+    if (marcaEditando) await fetch(`https://autolog-catalogo.onrender.com/api/marcas/${marcaEditando}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nombre: nuevaMarca }) });
+    else await fetch('https://autolog-catalogo.onrender.com/api/marcas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nombre: nuevaMarca }) });
     setNuevaMarca(''); setMarcaEditando(null); cargarDatosBasicos();
   };
   const eliminarMarca = async (id, nombre) => {
     if (window.confirm(`⚠️ ¿Borrar la marca ${nombre}?`)) {
-        const res = await fetch(`http://127.0.0.1:3000/api/marcas/${id}`, { method: 'DELETE' });
+        const res = await fetch(`https://autolog-catalogo.onrender.com/api/marcas/${id}`, { method: 'DELETE' });
         if (!res.ok) alert((await res.json()).error || 'Error al borrar'); else cargarDatosBasicos();
     }
   };
@@ -121,20 +121,20 @@ function Admin() {
   const manejarCambioVehiculo = (e) => setNuevoVehiculo({ ...nuevoVehiculo, [e.target.name]: e.target.value });
   const guardarVehiculo = async (e) => {
     e.preventDefault();
-    const url = vehiculoEditando ? `http://127.0.0.1:3000/api/vehiculos/${vehiculoEditando}` : 'http://127.0.0.1:3000/api/vehiculos';
+    const url = vehiculoEditando ? `https://autolog-catalogo.onrender.com/api/vehiculos/${vehiculoEditando}` : 'https://autolog-catalogo.onrender.com/api/vehiculos';
     const metodo = vehiculoEditando ? 'PUT' : 'POST';
     await fetch(url, { method: metodo, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(nuevoVehiculo) });
     setNuevoVehiculo({ marca_auto: '', modelo: '', anio_inicio: '', anio_fin: '', motor: '' }); setVehiculoEditando(null); cargarDatosBasicos();
   };
-  const eliminarVehiculo = async (id, nombre) => { if (window.confirm(`¿Borrar el vehículo ${nombre}?`)) { await fetch(`http://127.0.0.1:3000/api/vehiculos/${id}`, { method: 'DELETE' }); cargarDatosBasicos(); } };
-  const guardarNuevaCategoria = async (e) => { e.preventDefault(); await fetch('http://127.0.0.1:3000/api/categorias', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nombre: nuevaCategoria }) }); setNuevaCategoria(''); cargarDatosBasicos(); };
+  const eliminarVehiculo = async (id, nombre) => { if (window.confirm(`¿Borrar el vehículo ${nombre}?`)) { await fetch(`https://autolog-catalogo.onrender.com/api/vehiculos/${id}`, { method: 'DELETE' }); cargarDatosBasicos(); } };
+  const guardarNuevaCategoria = async (e) => { e.preventDefault(); await fetch('https://autolog-catalogo.onrender.com/api/categorias', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nombre: nuevaCategoria }) }); setNuevaCategoria(''); cargarDatosBasicos(); };
 
   // --- FUNCIONES DEL PERFIL ---
   const guardarPerfil = async (e) => {
     e.preventDefault();
     if(!perfil.id) return alert("Cargando credenciales, por favor intenta de nuevo en un segundo.");
     
-    const res = await fetch(`http://127.0.0.1:3000/api/usuario/${perfil.id}`, {
+    const res = await fetch(`https://autolog-catalogo.onrender.com/api/usuario/${perfil.id}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nuevo_nombre: perfil.nombre_usuario, nueva_contrasena: perfil.contrasena })
     });
     
@@ -237,7 +237,7 @@ function Admin() {
         <div className="p-6 bg-slate-50 border-b"><h2 className="text-xl font-bold text-slate-800">3. Auditoría de Repuestos ({inventario.length})</h2></div>
         <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="bg-white border-b uppercase text-xs text-slate-400 font-black"><tr><th className="p-4">Código</th><th className="p-4">Marca</th><th className="p-4 text-center">Acción</th></tr></thead><tbody className="divide-y divide-slate-100">{inventario.map(p => (<tr key={p.id} className="hover:bg-slate-50 transition-colors"><td className="p-4 font-bold text-slate-800 flex items-center gap-3"><img src={p.imagen_url || "https://cdn-icons-png.flaticon.com/512/3063/3063822.png"} className="w-10 h-10 object-cover rounded border"/> {p.codigo_pieza}</td><td className="p-4"><p className="font-bold text-slate-700">{p.marca}</p><p className="text-xs text-slate-500">{p.categoria}</p></td><td className="p-4 text-center space-x-2"><button onClick={() => iniciarEdicionRepuesto(p)} className="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg font-bold hover:bg-blue-100 transition">Editar</button><button onClick={() => eliminarRepuesto(p.id, p.codigo_pieza)} className="px-3 py-1.5 bg-red-50 text-red-600 rounded-lg font-bold hover:bg-red-100 transition">Borrar</button></td></tr>))}</tbody></table></div>
       </div>
-      <div className="text-center text-slate-400 text-xs pb-10">Sistema de Autogestión | Pasantías Profesionales Anderson</div>
+      <div className="text-center text-slate-400 text-xs pb-10">Sistema de Autogestión | Pasantías Profesionales Andersson</div>
     </div>
   );
 }
