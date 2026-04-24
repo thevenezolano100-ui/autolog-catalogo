@@ -10,7 +10,7 @@ function App() {
   const [productos, setProductos] = useState([]);
   const [marcas, setMarcas] = useState([]);
   const [busqueda, setBusqueda] = useState('');
-  const [filtroMarca, setFiltroMarca] = useState('Todas');
+  const [filtroMarca, setFiltroMarca] = useState('Todas'); 
   const [vista, setVista] = useState('catalogo');
   
   // PERSISTENCIA DE SESIÓN

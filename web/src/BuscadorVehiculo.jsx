@@ -24,7 +24,7 @@ function BuscadorVehiculo({ alEncontrar, alLimpiar }) {
         setModelos([]);
     }
   };
-
+ 
   const buscar = () => {
     fetch(`https://autolog-catalogo.onrender.com/api/buscar-por-vehiculo?marca=${seleccion.marca}&modelo=${seleccion.modelo}`)
       .then(res => res.json())

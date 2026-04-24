@@ -10,9 +10,9 @@ const PORT = 3000;
 
 app.use(cors());
 app.use(express.json());
-
+  
 // ===============================================
-// CREDENCIALES DE BASE DE DATOS EN LA NUBE (NEON)
+// CREDENCIALES DE BASE DE DATOS EN LA NUBE (NEON) 
 // ===============================================
 const pool = new Pool({
     connectionString: 'postgresql://neondb_owner:npg_GSfl19XITPFj@ep-wispy-bonus-anshmeg3-pooler.c-6.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require', // <--- 1. TU ENLACE DE NEON AQUÍ

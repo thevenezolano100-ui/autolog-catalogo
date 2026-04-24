@@ -11,7 +11,7 @@ function Admin() {
   const [imagenArchivo, setImagenArchivo] = useState(null);
   const [mensaje, setMensaje] = useState('');
 
-  // ESTADOS DE LISTAS
+  // ESTADOS DE LISTAS 
   const [categoriasLista, setCategoriasLista] = useState([]);
   const [nuevaCategoria, setNuevaCategoria] = useState('');
   const [inventario, setInventario] = useState([]);
