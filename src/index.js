@@ -2,8 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
 const multer = require('multer');
-
-// 1. IMPORTAMOS LAS NUEVAS HERRAMIENTAS DE CLOUDINARY
 const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
@@ -14,14 +12,10 @@ app.use(cors());
 app.use(express.json());
 
 // ===============================================
-// CREDENCIALES DE BASE DE DATOS LOCAL
-// ===============================================
-// ===============================================
 // CREDENCIALES DE BASE DE DATOS EN LA NUBE (NEON)
 // ===============================================
 const pool = new Pool({
-    // REEMPLAZA EL TEXTO DE ABAJO CON TU CONNECTION STRING DE NEON
-    connectionString: 'postgresql://neondb_owner:npg_GSfl19XITPFj@ep-wispy-bonus-anshmeg3.c-6.us-east-1.aws.neon.tech/neondb?sslmode=require',
+    connectionString: 'postgresql://neondb_owner:npg_GSfl19XITPFj@ep-wispy-bonus-anshmeg3-pooler.c-6.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require', // <--- 1. TU ENLACE DE NEON AQUÍ
 });
 
 pool.query(`
@@ -42,14 +36,11 @@ cloudinary.config({
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
-    folder: 'autolog_repuestos', // Cloudinary creará esta carpeta automáticamente
+    folder: 'autolog_repuestos',
     allowed_formats: ['jpg', 'jpeg', 'png', 'webp']
   },
 });
-// Multer ahora enviará los archivos directo a la nube, no al disco duro
 const upload = multer({ storage: storage });
-
-// (Ya no necesitamos app.use('/uploads',...) porque las URLs vendrán directo de internet)
 
 // ===============================================
 // SEGURIDAD Y PERFIL
@@ -141,7 +132,7 @@ app.get('/api/buscar-por-vehiculo', async (req, res) => {
     const { marca, modelo } = req.query;
     try {
         const query = `
-            SELECT DISTINCT p.id, p.codigo_pieza, p.descripcion, p.imagen_url, m.nombre as marca, c.nombre as categoria 
+            SELECT DISTINCT p.id, p.codigo_pieza, p.descripcion, p.imagen_url, p.precio, m.nombre as marca, c.nombre as categoria 
             FROM productos p JOIN marcas m ON p.marca_id = m.id JOIN categorias c ON p.categoria_id = c.id JOIN aplicaciones a ON p.id = a.producto_id JOIN vehiculos v ON a.vehiculo_id = v.id 
             WHERE v.marca_auto = $1 AND v.modelo = $2
         `;
@@ -150,7 +141,7 @@ app.get('/api/buscar-por-vehiculo', async (req, res) => {
 });
 
 // ===============================================
-// INVENTARIO (PRODUCTOS CLOUDINARY INTEGRADO)
+// INVENTARIO (PRODUCTOS CON PRECIO Y CLOUDINARY)
 // ===============================================
 app.get('/api/productos', async (req, res) => {
     try {
@@ -163,30 +154,30 @@ app.get('/api/productos', async (req, res) => {
 });
 
 app.post('/api/productos', upload.single('imagen'), async (req, res) => {
-    const { codigo_pieza, marca_id, categoria_id, descripcion, vehiculos_compatibles } = req.body;
+    const { codigo_pieza, marca_id, categoria_id, descripcion, vehiculos_compatibles, precio } = req.body;
     const vehiculos = JSON.parse(vehiculos_compatibles || '[]');
-    
-    // MAGIA DE CLOUDINARY: req.file.path ahora contiene un enlace seguro HTTPS mundial
     const imagen_url = req.file ? req.file.path : null;
-
     try {
-        const result = await pool.query('INSERT INTO productos (codigo_pieza, marca_id, categoria_id, descripcion, imagen_url) VALUES ($1, $2, $3, $4, $5) RETURNING id', [codigo_pieza, marca_id, categoria_id, descripcion, imagen_url]);
+        const result = await pool.query(
+            'INSERT INTO productos (codigo_pieza, marca_id, categoria_id, descripcion, imagen_url, precio) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id', 
+            [codigo_pieza, marca_id, categoria_id, descripcion, imagen_url, precio || 0]
+        );
         const nuevoId = result.rows[0].id;
         for (let vId of vehiculos) { await pool.query('INSERT INTO aplicaciones (producto_id, vehiculo_id) VALUES ($1, $2)', [nuevoId, vId]); }
-        res.json({ success: true, mensaje: 'Repuesto guardado con imagen segura' });
+        res.json({ success: true, mensaje: 'Repuesto guardado' });
     } catch (err) { console.error(err); res.status(500).json({ error: 'Error' }); }
 });
 
 app.put('/api/productos/:id', upload.single('imagen'), async (req, res) => {
     const { id } = req.params;
-    const { codigo_pieza, marca_id, categoria_id, descripcion, imagen_url_actual, vehiculos_compatibles } = req.body;
+    const { codigo_pieza, marca_id, categoria_id, descripcion, imagen_url_actual, vehiculos_compatibles, precio } = req.body;
     const vehiculos = JSON.parse(vehiculos_compatibles || '[]');
-    
-    // Si sube una nueva foto, Cloudinary le da un nuevo path, sino mantiene el anterior
     let imagen_url = req.file ? req.file.path : imagen_url_actual;
-
     try {
-        await pool.query('UPDATE productos SET codigo_pieza=$1, marca_id=$2, categoria_id=$3, descripcion=$4, imagen_url=$5 WHERE id=$6', [codigo_pieza, marca_id, categoria_id, descripcion, imagen_url, id]);
+        await pool.query(
+            'UPDATE productos SET codigo_pieza=$1, marca_id=$2, categoria_id=$3, descripcion=$4, imagen_url=$5, precio=$6 WHERE id=$7', 
+            [codigo_pieza, marca_id, categoria_id, descripcion, imagen_url, precio || 0, id]
+        );
         await pool.query('DELETE FROM aplicaciones WHERE producto_id = $1', [id]);
         for (let vId of vehiculos) { await pool.query('INSERT INTO aplicaciones (producto_id, vehiculo_id) VALUES ($1, $2)', [id, vId]); }
         res.json({ success: true, mensaje: 'Actualizado con éxito' });
