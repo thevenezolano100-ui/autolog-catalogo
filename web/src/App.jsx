@@ -4,7 +4,7 @@ import Login from './Login';
 import BuscadorVehiculo from './BuscadorVehiculo';
 
 const URL_BACKEND = 'https://autolog-catalogo.onrender.com'; 
-const WHATSAPP_VENDEDOR = "584120000000"; 
+const WHATSAPP_VENDEDOR = "584263266172"; 
 
 function App() {
   const [productos, setProductos] = useState([]);
