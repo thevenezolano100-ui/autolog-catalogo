@@ -3,14 +3,15 @@ import Admin from './Admin';
 import Login from './Login';
 import BuscadorVehiculo from './BuscadorVehiculo';
 
-const URL_BACKEND = 'https://autolog-catalogo.onrender.com'; // TU ENLACE DE RENDER
-const WHATSAPP_VENDEDOR = "584263266172"; // PON AQUÍ TU NÚMERO
+// ENLACE DE PRODUCCIÓN EN LA NUBE
+const URL_BACKEND = 'https://autolog-catalogo.onrender.com'; 
+const WHATSAPP_VENDEDOR = "584120000000"; // PON AQUÍ TU NÚMERO
 
 function App() {
   const [productos, setProductos] = useState([]);
   const [marcas, setMarcas] = useState([]);
   const [busqueda, setBusqueda] = useState('');
-  const [filtroMarca, setFiltroMarca] = useState('Todas'); 
+  const [filtroMarca, setFiltroMarca] = useState('Todas');
   const [vista, setVista] = useState('catalogo');
   
   // PERSISTENCIA DE SESIÓN
@@ -18,7 +19,7 @@ function App() {
     return localStorage.getItem('auth_autolog') === 'true';
   });
   
-  // ESTADO DEL CARRITO B2B
+  // ESTADO DEL CARRITO B2B (AHORA CON MANEJO DE CANTIDADES)
   const [carrito, setCarrito] = useState([]);
 
   const cargarDatos = async () => {
@@ -51,28 +52,62 @@ function App() {
     }
   };
 
-  // LÓGICA DEL CARRITO
-  const agregarAlCarrito = (p) => {
-    setCarrito([...carrito, p]);
+  // ==========================================
+  // NUEVO MOTOR DEL CARRITO INTELIGENTE
+  // ==========================================
+  const agregarAlCarrito = (producto) => {
+    setCarrito(prevCarrito => {
+      // Verifica si el producto ya existe en el carrito
+      const itemExistente = prevCarrito.find(item => item.id === producto.id);
+      
+      if (itemExistente) {
+        // Si existe, le suma 1 a la cantidad
+        return prevCarrito.map(item => 
+          item.id === producto.id ? { ...item, cantidad: item.cantidad + 1 } : item
+        );
+      } else {
+        // Si es nuevo, lo agrega con cantidad 1
+        return [...prevCarrito, { ...producto, cantidad: 1 }];
+      }
+    });
   };
 
-  const quitarDelCarrito = (index) => {
-    const nuevo = [...carrito];
-    nuevo.splice(index, 1);
-    setCarrito(nuevo);
+  const modificarCantidad = (idProducto, variacion) => {
+    setCarrito(prevCarrito => {
+      return prevCarrito.map(item => {
+        if (item.id === idProducto) {
+          const nuevaCantidad = item.cantidad + variacion;
+          // Evita que la cantidad baje de 1. Si quieren 0, usan la "X" para borrarlo.
+          return { ...item, cantidad: Math.max(1, nuevaCantidad) };
+        }
+        return item;
+      });
+    });
+  };
+
+  const eliminarDelCarrito = (idProducto) => {
+    setCarrito(prevCarrito => prevCarrito.filter(item => item.id !== idProducto));
+  };
+
+  const calcularTotalCarrito = () => {
+    return carrito.reduce((total, item) => total + (parseFloat(item.precio || 0) * item.cantidad), 0).toFixed(2);
   };
 
   const enviarWhatsApp = () => {
-    const total = carrito.reduce((acc, p) => acc + parseFloat(p.precio || 0), 0).toFixed(2);
-    let mensaje = `Hola, me interesa una cotización por los siguientes repuestos:\n\n`;
+    const total = calcularTotalCarrito();
+    let mensaje = `Hola, solicito una cotización formal por los siguientes repuestos:\n\n`;
+    
     carrito.forEach((p, i) => {
-        mensaje += `${i+1}. [${p.codigo_pieza}] - ${p.marca} - $${p.precio}\n`;
+        const subtotal = (parseFloat(p.precio || 0) * p.cantidad).toFixed(2);
+        mensaje += `*${p.cantidad}x* [${p.codigo_pieza}] - ${p.marca}\n   Precio: $${p.precio} c/u  (Sub: $${subtotal})\n\n`;
     });
-    mensaje += `\n*TOTAL ESTIMADO: $${total}*`;
+    
+    mensaje += `*TOTAL ESTIMADO: $${total}*`;
     
     const url = `https://wa.me/${WHATSAPP_VENDEDOR}?text=${encodeURIComponent(mensaje)}`;
     window.open(url, '_blank');
   };
+  // ==========================================
 
   // LÓGICA DE FILTRADO
   const filtrados = productos.filter(p => {
@@ -94,7 +129,7 @@ function App() {
   return (
     <div className="min-h-screen bg-slate-50 font-sans antialiased text-slate-900 flex flex-col">
       
-      {/* BARRA DE NAVEGACIÓN COMPLETA */}
+      {/* BARRA DE NAVEGACIÓN */}
       <nav className="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="text-xl font-black text-slate-900 tracking-tighter cursor-pointer" onClick={() => { setVista('catalogo'); limpiarTodoElCatalogo(); }}>
@@ -157,9 +192,8 @@ function App() {
               </div>
             </aside>
 
-            {/* CONTENIDO PRINCIPAL: GRILLA DE PRODUCTOS Y BUSCADOR DE VEHÍCULOS */}
+            {/* CONTENIDO PRINCIPAL: GRILLA DE PRODUCTOS */}
             <div className="flex-1">
-              {/* COMPONENTE DE BUSCADOR EN CASCADA */}
               <BuscadorVehiculo alEncontrar={(r) => { const unicos = r.filter((v, i, a) => a.findIndex(t => (t.id === v.id)) === i); setProductos(unicos); }} alLimpiar={cargarDatos} />
 
               <div className="flex justify-between items-center mb-6 mt-8">
@@ -167,7 +201,6 @@ function App() {
                 <span className="text-sm text-slate-500 font-medium">{filtrados.length} resultados</span>
               </div>
 
-              {/* GRILLA DE RESULTADOS */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {filtrados.map(p => (
                   <div key={p.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden hover:border-blue-300 hover:shadow-xl hover:shadow-blue-500/10 transition-all group flex flex-col">
@@ -197,37 +230,51 @@ function App() {
               )}
             </div>
 
-            {/* SIDEBAR DERECHO: EL CARRITO */}
+            {/* SIDEBAR DERECHO: EL CARRITO PROFESIONAL */}
             <aside className="w-full lg:w-80 shrink-0">
                 <div className="bg-white rounded-3xl border border-blue-100 shadow-xl p-6 sticky top-24">
                     <h3 className="font-bold text-slate-800 mb-6 flex items-center justify-between">
                         Tu Cotización 
-                        <span className="bg-blue-100 text-blue-600 px-3 py-1 rounded-full text-xs font-black">{carrito.length}</span>
+                        <span className="bg-blue-100 text-blue-600 px-3 py-1 rounded-full text-xs font-black">{carrito.length} ítems</span>
                     </h3>
                     
-                    <div className="max-h-64 overflow-y-auto mb-6 pr-2 space-y-4">
+                    <div className="max-h-[22rem] overflow-y-auto mb-6 pr-2 space-y-3">
                         {carrito.length === 0 && (
                             <div className="text-center py-8">
                                 <span className="text-4xl">🛒</span>
                                 <p className="text-slate-400 text-sm mt-4 font-medium">Tu carrito está vacío.</p>
                             </div>
                         )}
-                        {carrito.map((p, i) => (
-                            <div key={i} className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-100">
-                                <div>
-                                    <p className="font-bold text-sm text-slate-800">{p.codigo_pieza}</p>
-                                    <p className="text-xs text-slate-500 font-medium">${p.precio}</p>
+                        
+                        {/* LISTA DE ITEMS CON CONTROLES */}
+                        {carrito.map((item) => (
+                            <div key={item.id} className="flex flex-col bg-slate-50 p-4 rounded-2xl border border-slate-100 gap-3 relative group">
+                                <div className="flex justify-between items-start">
+                                    <div className="pr-4">
+                                        <p className="font-bold text-sm text-slate-800 leading-tight">{item.codigo_pieza}</p>
+                                        <p className="text-xs text-slate-500 font-medium mt-1">${item.precio} c/u</p>
+                                    </div>
+                                    <button onClick={() => eliminarDelCarrito(item.id)} className="absolute top-3 right-3 w-6 h-6 flex items-center justify-center bg-white text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full shadow-sm font-bold transition opacity-0 group-hover:opacity-100" title="Quitar producto">×</button>
                                 </div>
-                                <button onClick={() => quitarDelCarrito(i)} className="w-8 h-8 flex items-center justify-center bg-white text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg shadow-sm font-bold transition">×</button>
+                                
+                                <div className="flex justify-between items-center border-t border-slate-200/60 pt-3">
+                                    {/* CONTROLES DE CANTIDAD (+ / -) */}
+                                    <div className="flex items-center bg-white border border-slate-200 rounded-lg p-0.5 shadow-sm">
+                                        <button onClick={() => modificarCantidad(item.id, -1)} className="w-7 h-7 flex items-center justify-center text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-md font-bold transition">-</button>
+                                        <span className="text-sm font-black text-slate-800 w-8 text-center">{item.cantidad}</span>
+                                        <button onClick={() => modificarCantidad(item.id, 1)} className="w-7 h-7 flex items-center justify-center text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-md font-bold transition">+</button>
+                                    </div>
+                                    <span className="font-black text-sm text-emerald-600">${(parseFloat(item.precio || 0) * item.cantidad).toFixed(2)}</span>
+                                </div>
                             </div>
                         ))}
                     </div>
 
                     <div className="border-t border-slate-100 pt-6">
-                        <div className="flex justify-between items-center mb-6">
+                        <div className="flex justify-between items-end mb-6">
                             <span className="text-slate-500 font-bold">Total Estimado:</span>
-                            <span className="text-2xl font-black text-slate-900">
-                                ${carrito.reduce((acc, p) => acc + parseFloat(p.precio || 0), 0).toFixed(2)}
+                            <span className="text-3xl font-black text-slate-900 tracking-tight">
+                                ${calcularTotalCarrito()}
                             </span>
                         </div>
                         <button 
