@@ -5,7 +5,7 @@ import BuscadorVehiculo from './BuscadorVehiculo';
 
 // ENLACE DE PRODUCCIÓN EN LA NUBE
 const URL_BACKEND = 'https://autolog-catalogo.onrender.com'; 
-const WHATSAPP_VENDEDOR = "584120000000"; // PON AQUÍ TU NÚMERO
+const WHATSAPP_VENDEDOR = "584263266172"; // PON AQUÍ TU NÚMERO
 
 function App() {
   const [productos, setProductos] = useState([]);
