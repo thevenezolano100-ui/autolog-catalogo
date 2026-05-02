@@ -10,12 +10,12 @@ const PORT = 3000;
 
 app.use(cors());
 app.use(express.json());
-  
+
 // ===============================================
-// CREDENCIALES DE BASE DE DATOS EN LA NUBE (NEON) 
+// CREDENCIALES DE BASE DE DATOS EN LA NUBE (NEON)
 // ===============================================
 const pool = new Pool({
-    connectionString: 'postgresql://neondb_owner:npg_GSfl19XITPFj@ep-wispy-bonus-anshmeg3-pooler.c-6.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require', // <--- 1. TU ENLACE DE NEON AQUÍ
+    connectionString: 'postgresql://neondb_owner:npg_GSfl19XITPFj@ep-wispy-bonus-anshmeg3.c-6.us-east-1.aws.neon.tech/neondb?sslmode=require', // <--- TU ENLACE AQUÍ
 });
 
 pool.query(`
@@ -28,9 +28,9 @@ pool.query(`
 // CONFIGURACIÓN DE NUBE (CLOUDINARY)
 // ===============================================
 cloudinary.config({ 
-  cloud_name: 'ddrqga65e',   // <--- 2. PEGA TU CLOUD NAME AQUÍ
-  api_key: '781739566125483',         // <--- 3. PEGA TU API KEY AQUÍ
-  api_secret: '0Yja9-EHbn8ESfClJEuKitLi35k'    // <--- 4. PEGA TU API SECRET AQUÍ
+  cloud_name: 'ddrqga65e',   
+  api_key: '781739566125483',         
+  api_secret: '0Yja9-EHbn8ESfClJEuKitLi35k'    
 });
 
 const storage = new CloudinaryStorage({
@@ -42,9 +42,8 @@ const storage = new CloudinaryStorage({
 });
 const upload = multer({ storage: storage });
 
-// ===============================================
-// SEGURIDAD Y PERFIL
-// ===============================================
+// ... (Las rutas de Login, Usuario, Marcas, Categorias y Vehiculos quedan exactamente igual. Puedes dejarlas como las tenías o copiar todo si prefieres) ...
+
 app.post('/api/login', async (req, res) => {
     const { usuario, password } = req.body;
     try {
@@ -55,93 +54,39 @@ app.post('/api/login', async (req, res) => {
 });
 
 app.get('/api/usuario-admin', async (req, res) => {
-    try {
-        const r = await pool.query('SELECT id, nombre_usuario FROM usuarios ORDER BY id ASC LIMIT 1');
-        res.json(r.rows[0]);
-    } catch (err) { res.status(500).send(err); }
+    try { const r = await pool.query('SELECT id, nombre_usuario FROM usuarios ORDER BY id ASC LIMIT 1'); res.json(r.rows[0]); } catch (err) { res.status(500).send(err); }
 });
 
 app.put('/api/usuario/:id', async (req, res) => {
-    const { id } = req.params;
-    const { nuevo_nombre, nueva_contrasena } = req.body;
-    try {
-        await pool.query('UPDATE usuarios SET nombre_usuario = $1, contrasena = $2 WHERE id = $3', [nuevo_nombre, nueva_contrasena, id]);
-        res.json({ success: true, mensaje: 'Perfil actualizado' });
-    } catch (err) { res.status(500).send(err); }
+    const { id } = req.params; const { nuevo_nombre, nueva_contrasena } = req.body;
+    try { await pool.query('UPDATE usuarios SET nombre_usuario = $1, contrasena = $2 WHERE id = $3', [nuevo_nombre, nueva_contrasena, id]); res.json({ success: true, mensaje: 'Perfil actualizado' }); } catch (err) { res.status(500).send(err); }
 });
 
-// ===============================================
-// MARCAS (CRUD COMPLETO)
-// ===============================================
-app.get('/api/marcas', async (req, res) => {
-    try { const r = await pool.query('SELECT * FROM marcas ORDER BY nombre'); res.json(r.rows); } catch (err) { res.status(500).send(err); }
-});
-app.post('/api/marcas', async (req, res) => {
-    try { await pool.query('INSERT INTO marcas (nombre) VALUES ($1)', [req.body.nombre]); res.json({ success: true }); } catch (err) { res.status(500).send(err); }
-});
-app.put('/api/marcas/:id', async (req, res) => {
-    try { await pool.query('UPDATE marcas SET nombre = $1 WHERE id = $2', [req.body.nombre, req.params.id]); res.json({ success: true }); } catch (err) { res.status(500).send(err); }
-});
-app.delete('/api/marcas/:id', async (req, res) => {
-    try {
-        const check = await pool.query('SELECT * FROM productos WHERE marca_id = $1', [req.params.id]);
-        if (check.rows.length > 0) return res.status(400).json({ error: 'No se puede borrar porque tiene repuestos asignados.' });
-        await pool.query('DELETE FROM marcas WHERE id = $1', [req.params.id]);
-        res.json({ success: true });
-    } catch (err) { res.status(500).send(err); }
-});
+app.get('/api/marcas', async (req, res) => { try { const r = await pool.query('SELECT * FROM marcas ORDER BY nombre'); res.json(r.rows); } catch (err) { res.status(500).send(err); } });
+app.post('/api/marcas', async (req, res) => { try { await pool.query('INSERT INTO marcas (nombre) VALUES ($1)', [req.body.nombre]); res.json({ success: true }); } catch (err) { res.status(500).send(err); } });
+app.put('/api/marcas/:id', async (req, res) => { try { await pool.query('UPDATE marcas SET nombre = $1 WHERE id = $2', [req.body.nombre, req.params.id]); res.json({ success: true }); } catch (err) { res.status(500).send(err); } });
+app.delete('/api/marcas/:id', async (req, res) => { try { const check = await pool.query('SELECT * FROM productos WHERE marca_id = $1', [req.params.id]); if (check.rows.length > 0) return res.status(400).json({ error: 'Tiene repuestos' }); await pool.query('DELETE FROM marcas WHERE id = $1', [req.params.id]); res.json({ success: true }); } catch (err) { res.status(500).send(err); } });
 
-// ===============================================
-// CATEGORÍAS
-// ===============================================
-app.get('/api/categorias', async (req, res) => {
-    try { const r = await pool.query('SELECT * FROM categorias ORDER BY nombre'); res.json(r.rows); } catch (err) { res.status(500).send(err); }
-});
-app.post('/api/categorias', async (req, res) => {
-    try { await pool.query('INSERT INTO categorias (nombre) VALUES ($1)', [req.body.nombre]); res.json({ success: true }); } catch (err) { res.status(500).send(err); }
-});
+app.get('/api/categorias', async (req, res) => { try { const r = await pool.query('SELECT * FROM categorias ORDER BY nombre'); res.json(r.rows); } catch (err) { res.status(500).send(err); } });
+app.post('/api/categorias', async (req, res) => { try { await pool.query('INSERT INTO categorias (nombre) VALUES ($1)', [req.body.nombre]); res.json({ success: true }); } catch (err) { res.status(500).send(err); } });
 
-// ===============================================
-// VEHÍCULOS (CRUD)
-// ===============================================
-app.get('/api/vehiculos', async (req, res) => {
-    try { const r = await pool.query('SELECT * FROM vehiculos ORDER BY marca_auto, modelo'); res.json(r.rows); } catch (err) { res.status(500).send(err); }
-});
-app.post('/api/vehiculos', async (req, res) => {
-    const { marca_auto, modelo, anio_inicio, anio_fin, motor } = req.body;
-    try { await pool.query('INSERT INTO vehiculos (marca_auto, modelo, anio_inicio, anio_fin, motor) VALUES ($1, $2, $3, $4, $5)', [marca_auto, modelo, anio_inicio, anio_fin, motor]); res.json({ success: true }); } catch (err) { res.status(500).send(err); }
-});
-app.put('/api/vehiculos/:id', async (req, res) => {
-    const { marca_auto, modelo, anio_inicio, anio_fin, motor } = req.body;
-    try { await pool.query('UPDATE vehiculos SET marca_auto=$1, modelo=$2, anio_inicio=$3, anio_fin=$4, motor=$5 WHERE id=$6', [marca_auto, modelo, anio_inicio, anio_fin, motor, req.params.id]); res.json({ success: true }); } catch (err) { res.status(500).send(err); }
-});
-app.delete('/api/vehiculos/:id', async (req, res) => {
-    try { await pool.query('DELETE FROM aplicaciones WHERE vehiculo_id = $1', [req.params.id]); await pool.query('DELETE FROM vehiculos WHERE id = $1', [req.params.id]); res.json({ success: true }); } catch (err) { res.status(500).send(err); }
-});
+app.get('/api/vehiculos', async (req, res) => { try { const r = await pool.query('SELECT * FROM vehiculos ORDER BY marca_auto, modelo'); res.json(r.rows); } catch (err) { res.status(500).send(err); } });
+app.post('/api/vehiculos', async (req, res) => { const { marca_auto, modelo, anio_inicio, anio_fin, motor } = req.body; try { await pool.query('INSERT INTO vehiculos (marca_auto, modelo, anio_inicio, anio_fin, motor) VALUES ($1, $2, $3, $4, $5)', [marca_auto, modelo, anio_inicio, anio_fin, motor]); res.json({ success: true }); } catch (err) { res.status(500).send(err); } });
+app.put('/api/vehiculos/:id', async (req, res) => { const { marca_auto, modelo, anio_inicio, anio_fin, motor } = req.body; try { await pool.query('UPDATE vehiculos SET marca_auto=$1, modelo=$2, anio_inicio=$3, anio_fin=$4, motor=$5 WHERE id=$6', [marca_auto, modelo, anio_inicio, anio_fin, motor, req.params.id]); res.json({ success: true }); } catch (err) { res.status(500).send(err); } });
+app.delete('/api/vehiculos/:id', async (req, res) => { try { await pool.query('DELETE FROM aplicaciones WHERE vehiculo_id = $1', [req.params.id]); await pool.query('DELETE FROM vehiculos WHERE id = $1', [req.params.id]); res.json({ success: true }); } catch (err) { res.status(500).send(err); } });
 
-// ===============================================
-// BUSCADOR EN CASCADA
-// ===============================================
-app.get('/api/vehiculos/marcas', async (req, res) => {
-    try { const r = await pool.query('SELECT DISTINCT marca_auto FROM vehiculos ORDER BY marca_auto'); res.json(r.rows); } catch (err) { res.status(500).send(err); }
-});
-app.get('/api/vehiculos/modelos/:marca', async (req, res) => {
-    try { const r = await pool.query('SELECT DISTINCT modelo FROM vehiculos WHERE marca_auto = $1 ORDER BY modelo', [req.params.marca]); res.json(r.rows); } catch (err) { res.status(500).send(err); }
-});
+app.get('/api/vehiculos/marcas', async (req, res) => { try { const r = await pool.query('SELECT DISTINCT marca_auto FROM vehiculos ORDER BY marca_auto'); res.json(r.rows); } catch (err) { res.status(500).send(err); } });
+app.get('/api/vehiculos/modelos/:marca', async (req, res) => { try { const r = await pool.query('SELECT DISTINCT modelo FROM vehiculos WHERE marca_auto = $1 ORDER BY modelo', [req.params.marca]); res.json(r.rows); } catch (err) { res.status(500).send(err); } });
 app.get('/api/buscar-por-vehiculo', async (req, res) => {
     const { marca, modelo } = req.query;
     try {
-        const query = `
-            SELECT DISTINCT p.id, p.codigo_pieza, p.descripcion, p.imagen_url, p.precio, m.nombre as marca, c.nombre as categoria 
-            FROM productos p JOIN marcas m ON p.marca_id = m.id JOIN categorias c ON p.categoria_id = c.id JOIN aplicaciones a ON p.id = a.producto_id JOIN vehiculos v ON a.vehiculo_id = v.id 
-            WHERE v.marca_auto = $1 AND v.modelo = $2
-        `;
+        const query = `SELECT DISTINCT p.id, p.codigo_pieza, p.descripcion, p.imagen_url, p.precio, p.stock, m.nombre as marca, c.nombre as categoria FROM productos p JOIN marcas m ON p.marca_id = m.id JOIN categorias c ON p.categoria_id = c.id JOIN aplicaciones a ON p.id = a.producto_id JOIN vehiculos v ON a.vehiculo_id = v.id WHERE v.marca_auto = $1 AND v.modelo = $2`;
         const r = await pool.query(query, [marca, modelo]); res.json(r.rows);
     } catch (err) { res.status(500).send(err); }
 });
 
 // ===============================================
-// INVENTARIO (PRODUCTOS CON PRECIO Y CLOUDINARY)
+// INVENTARIO (CON PRECIO Y NUEVO STOCK)
 // ===============================================
 app.get('/api/productos', async (req, res) => {
     try {
@@ -154,13 +99,14 @@ app.get('/api/productos', async (req, res) => {
 });
 
 app.post('/api/productos', upload.single('imagen'), async (req, res) => {
-    const { codigo_pieza, marca_id, categoria_id, descripcion, vehiculos_compatibles, precio } = req.body;
+    // AHORA RECIBIMOS EL STOCK
+    const { codigo_pieza, marca_id, categoria_id, descripcion, vehiculos_compatibles, precio, stock } = req.body;
     const vehiculos = JSON.parse(vehiculos_compatibles || '[]');
     const imagen_url = req.file ? req.file.path : null;
     try {
         const result = await pool.query(
-            'INSERT INTO productos (codigo_pieza, marca_id, categoria_id, descripcion, imagen_url, precio) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id', 
-            [codigo_pieza, marca_id, categoria_id, descripcion, imagen_url, precio || 0]
+            'INSERT INTO productos (codigo_pieza, marca_id, categoria_id, descripcion, imagen_url, precio, stock) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id', 
+            [codigo_pieza, marca_id, categoria_id, descripcion, imagen_url, precio || 0, stock || 0]
         );
         const nuevoId = result.rows[0].id;
         for (let vId of vehiculos) { await pool.query('INSERT INTO aplicaciones (producto_id, vehiculo_id) VALUES ($1, $2)', [nuevoId, vId]); }
@@ -170,13 +116,14 @@ app.post('/api/productos', upload.single('imagen'), async (req, res) => {
 
 app.put('/api/productos/:id', upload.single('imagen'), async (req, res) => {
     const { id } = req.params;
-    const { codigo_pieza, marca_id, categoria_id, descripcion, imagen_url_actual, vehiculos_compatibles, precio } = req.body;
+    // AHORA RECIBIMOS EL STOCK
+    const { codigo_pieza, marca_id, categoria_id, descripcion, imagen_url_actual, vehiculos_compatibles, precio, stock } = req.body;
     const vehiculos = JSON.parse(vehiculos_compatibles || '[]');
     let imagen_url = req.file ? req.file.path : imagen_url_actual;
     try {
         await pool.query(
-            'UPDATE productos SET codigo_pieza=$1, marca_id=$2, categoria_id=$3, descripcion=$4, imagen_url=$5, precio=$6 WHERE id=$7', 
-            [codigo_pieza, marca_id, categoria_id, descripcion, imagen_url, precio || 0, id]
+            'UPDATE productos SET codigo_pieza=$1, marca_id=$2, categoria_id=$3, descripcion=$4, imagen_url=$5, precio=$6, stock=$7 WHERE id=$8', 
+            [codigo_pieza, marca_id, categoria_id, descripcion, imagen_url, precio || 0, stock || 0, id]
         );
         await pool.query('DELETE FROM aplicaciones WHERE producto_id = $1', [id]);
         for (let vId of vehiculos) { await pool.query('INSERT INTO aplicaciones (producto_id, vehiculo_id) VALUES ($1, $2)', [id, vId]); }
