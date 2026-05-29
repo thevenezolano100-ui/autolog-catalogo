@@ -14,10 +14,10 @@ app.use(express.json());
 // ===============================================
 // 1. TUS CREDENCIALES (Cámbialas cuando puedas)
 // ===============================================
-const ENLACE_NEON = 'AQUI_PONES_TU_ENLACE_DE_NEON_TECH';
-const CLOUD_NAME = 'TU_CLOUD_NAME';
-const API_KEY = 'TU_API_KEY';
-const API_SECRET = 'TU_API_SECRET';
+const ENLACE_NEON = 'postgresql://neondb_owner:npg_GSfl19XITPFj@ep-wispy-bonus-anshmeg3.c-6.us-east-1.aws.neon.tech/neondb?sslmode=require';
+const CLOUD_NAME = 'ddrqga65e';
+const API_KEY = '781739566125483';
+const API_SECRET = '0Yja9-EHbn8ESfClJEuKitLi35k';
 
 // ===============================================
 // 2. ESCUDO ANTI-CAÍDAS DE BASE DE DATOS
