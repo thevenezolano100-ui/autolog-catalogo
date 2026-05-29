@@ -24,30 +24,33 @@ const API_SECRET = '0Yja9-EHbn8ESfClJEuKitLi35k';
 // ===============================================
 // 2. DIAGNÓSTICO DEL SERVIDOR
 // ===============================================
-app.get('/', (req, res) => { res.status(200).send('✅ Servidor de Autolog corriendo en Alta Disponibilidad.'); });
+app.get('/', (req, res) => { res.status(200).send('✅ Servidor de Autolog corriendo. Migraciones aplicadas.'); });
 
 // ===============================================
-// 3. CONEXIÓN A BASE DE DATOS (MIGRACIONES PASO A PASO)
+// 3. CONEXIÓN Y CIRUGÍA DE BASE DE DATOS (MIGRACIONES)
 // ===============================================
 let pool;
 try {
     if (!ENLACE_NEON.startsWith('postgres')) throw new Error("Falta enlace");
     pool = new Pool({ connectionString: ENLACE_NEON });
     
-    // Ejecución quirúrgica e individual de tablas para evitar colisiones en Neon
     const inicializarEstructura = async () => {
         const consultas = [
             `CREATE TABLE IF NOT EXISTS usuarios (id SERIAL PRIMARY KEY, nombre_usuario VARCHAR(50), contrasena VARCHAR(50));`,
             `CREATE TABLE IF NOT EXISTS marcas (id SERIAL PRIMARY KEY, nombre VARCHAR(100));`,
             `CREATE TABLE IF NOT EXISTS categorias (id SERIAL PRIMARY KEY, nombre VARCHAR(100));`,
             `CREATE TABLE IF NOT EXISTS productos (id SERIAL PRIMARY KEY, codigo_pieza VARCHAR(100), descripcion TEXT, precio DECIMAL(10,2), stock INT DEFAULT 0, marca_id INT, categoria_id INT, imagen_url TEXT);`,
-            `CREATE TABLE IF NOT EXISTS vehiculos (id SERIAL PRIMARY KEY, marca_auto VARCHAR(100), modelo VARCHAR(100), motor VARCHAR(100) DEFAULT 'N/A');`,
+            `CREATE TABLE IF NOT EXISTS vehiculos (id SERIAL PRIMARY KEY, marca_auto VARCHAR(100), modelo VARCHAR(100));`,
             `CREATE TABLE IF NOT EXISTS aplicaciones (producto_id INT, vehiculo_id INT, PRIMARY KEY (producto_id, vehiculo_id));`,
-            `CREATE TABLE IF NOT EXISTS ventas (id SERIAL PRIMARY KEY, fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP, metodo_pago VARCHAR(50), total DECIMAL(10, 2), comprobante_url TEXT, estado VARCHAR(20) DEFAULT 'Pendiente');`,
-            `CREATE TABLE IF NOT EXISTS detalles_venta (id SERIAL PRIMARY KEY, venta_id INT, producto_id INT, cantidad INT, precio_unitario DECIMAL(10, 2), subtotal DECIMAL(10, 2));`
+            `CREATE TABLE IF NOT EXISTS ventas (id SERIAL PRIMARY KEY, fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP, metodo_pago VARCHAR(50), total DECIMAL(10, 2), comprobante_url TEXT);`,
+            `CREATE TABLE IF NOT EXISTS detalles_venta (id SERIAL PRIMARY KEY, venta_id INT, producto_id INT, cantidad INT, precio_unitario DECIMAL(10, 2), subtotal DECIMAL(10, 2));`,
+            
+            // CIRUGÍA DE ACTUALIZACIÓN: Forzamos a la BD a añadir las columnas faltantes sin borrar los datos viejos
+            `ALTER TABLE ventas ADD COLUMN IF NOT EXISTS estado VARCHAR(20) DEFAULT 'Pendiente';`,
+            `ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS motor VARCHAR(100) DEFAULT 'N/A';`
         ];
         for (let sql of consultas) {
-            await pool.query(sql).catch(e => console.log("Aviso estructuración:", e.message));
+            await pool.query(sql).catch(e => console.log("Aviso de BD:", e.message));
         }
     };
     inicializarEstructura();
@@ -74,19 +77,17 @@ if (CLOUD_NAME === 'TU_CLOUD_NAME' || !CLOUD_NAME) {
 // ===============================================
 app.post('/api/login', async (req, res) => { const { usuario, password } = req.body; try { const result = await pool.query('SELECT * FROM usuarios WHERE nombre_usuario = $1 AND contrasena = $2', [usuario, password]); if (result.rows.length > 0) res.json({ success: true, mensaje: 'Acceso concedido' }); else res.status(401).json({ success: false, mensaje: 'Credenciales incorrectas' }); } catch (err) { res.status(500).json({ error: err.message }); } });
 
-// ENDPOINTS MARCAS
 app.get('/api/marcas', async (req, res) => { try { const r = await pool.query('SELECT * FROM marcas ORDER BY nombre'); res.json(r.rows); } catch (err) { res.status(500).json({ error: err.message }); } });
 app.post('/api/marcas', async (req, res) => { try { await pool.query('INSERT INTO marcas (nombre) VALUES ($1)', [req.body.nombre]); res.json({ success: true }); } catch (err) { res.status(500).json({ error: err.message }); } });
 app.delete('/api/marcas/:id', async (req, res) => { try { await pool.query('DELETE FROM marcas WHERE id = $1', [req.params.id]); res.json({ success: true }); } catch (err) { res.status(500).json({ error: err.message }); } });
 
-// ENDPOINTS CATEGORIAS
 app.get('/api/categorias', async (req, res) => { try { const r = await pool.query('SELECT * FROM categorias ORDER BY nombre'); res.json(r.rows); } catch (err) { res.status(500).json({ error: err.message }); } });
 app.post('/api/categorias', async (req, res) => { try { await pool.query('INSERT INTO categorias (nombre) VALUES ($1)', [req.body.nombre]); res.json({ success: true }); } catch (err) { res.status(500).json({ error: err.message }); } });
 app.delete('/api/categorias/:id', async (req, res) => { try { await pool.query('DELETE FROM categorias WHERE id = $1', [req.params.id]); res.json({ success: true }); } catch (err) { res.status(500).json({ error: err.message }); } });
 
-// ENDPOINTS VEHICULOS (COMPATIBILIDAD AUTOS/MOTOS)
+// ENDPOINTS VEHICULOS (SIN REQUERIR MOTOR OBLIGATORIO)
 app.get('/api/vehiculos', async (req, res) => { try { const r = await pool.query('SELECT * FROM vehiculos ORDER BY marca_auto, modelo'); res.json(r.rows); } catch (err) { res.status(500).json({ error: err.message }); } });
-app.post('/api/vehiculos', async (req, res) => { const { marca_auto, modelo, motor } = req.body; try { await pool.query('INSERT INTO vehiculos (marca_auto, modelo, motor) VALUES ($1, $2, $3)', [marca_auto, modelo, motor || 'N/A']); res.json({ success: true }); } catch (err) { res.status(500).json({ error: err.message }); } });
+app.post('/api/vehiculos', async (req, res) => { const { marca_auto, modelo } = req.body; try { await pool.query('INSERT INTO vehiculos (marca_auto, modelo) VALUES ($1, $2)', [marca_auto, modelo]); res.json({ success: true }); } catch (err) { res.status(500).json({ error: err.message }); } });
 app.delete('/api/vehiculos/:id', async (req, res) => { try { await pool.query('DELETE FROM aplicaciones WHERE vehiculo_id = $1', [req.params.id]); await pool.query('DELETE FROM vehiculos WHERE id = $1', [req.params.id]); res.json({ success: true }); } catch (err) { res.status(500).json({ error: err.message }); } });
 
 // ENDPOINTS PRODUCTOS / INVENTARIO
