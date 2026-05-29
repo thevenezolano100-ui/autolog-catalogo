@@ -12,16 +12,32 @@ app.use(cors());
 app.use(express.json());
 
 // ===============================================
-// CREDENCIALES (REEMPLAZA CON LAS TUYAS)
+// CREDENCIALES DE BASE DE DATOS EN LA NUBE (NEON)
 // ===============================================
 const pool = new Pool({
-    connectionString: 'postgresql://neondb_owner:npg_GSfl19XITPFj@ep-wispy-bonus-anshmeg3.c-6.us-east-1.aws.neon.tech/neondb?sslmode=require', 
+    connectionString: 'postgresql://neondb_owner:npg_GSfl19XITPFj@ep-wispy-bonus-anshmeg3.c-6.us-east-1.aws.neon.tech/neondb?sslmode=require', // <--- TU ENLACE AQUÍ
 });
 
+// ESTE ES EL BLOQUE QUE CREA LAS TABLAS DE VENTAS AUTOMÁTICAMENTE
+pool.query(`
+    CREATE TABLE IF NOT EXISTS aplicaciones (
+        producto_id INT, vehiculo_id INT, PRIMARY KEY (producto_id, vehiculo_id)
+    );
+    CREATE TABLE IF NOT EXISTS ventas (
+        id SERIAL PRIMARY KEY, fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP, metodo_pago VARCHAR(50), total DECIMAL(10, 2), comprobante_url TEXT
+    );
+    CREATE TABLE IF NOT EXISTS detalles_venta (
+        id SERIAL PRIMARY KEY, venta_id INT REFERENCES ventas(id) ON DELETE CASCADE, producto_id INT REFERENCES productos(id), cantidad INT, precio_unitario DECIMAL(10, 2), subtotal DECIMAL(10, 2)
+    );
+`).catch(err => console.error("Aviso BD:", err));
+
+// ===============================================
+// CONFIGURACIÓN DE NUBE (CLOUDINARY)
+// ===============================================
 cloudinary.config({ 
-  cloud_name: 'ddrqga65e',   
-  api_key: '781739566125483',         
-  api_secret: '0Yja9-EHbn8ESfClJEuKitLi35k'    
+  cloud_name: 'ddrqga65e',   // <--- TU CLOUD NAME AQUÍ
+  api_key: '781739566125483',         // <--- TU API KEY AQUÍ
+  api_secret: '0Yja9-EHbn8ESfClJEuKitLi35k'    // <--- TU API SECRET AQUÍ
 });
 
 const storage = new CloudinaryStorage({
@@ -31,9 +47,17 @@ const storage = new CloudinaryStorage({
 const upload = multer({ storage: storage });
 
 // ===============================================
-// USUARIOS Y SEGURIDAD
+// SEGURIDAD Y PERFIL (LOGIN)
 // ===============================================
-app.post('/api/login', async (req, res) => { const { usuario, password } = req.body; try { const result = await pool.query('SELECT * FROM usuarios WHERE nombre_usuario = $1 AND contrasena = $2', [usuario, password]); if (result.rows.length > 0) res.json({ success: true, mensaje: 'Acceso concedido' }); else res.status(401).json({ success: false, mensaje: 'Credenciales incorrectas' }); } catch (err) { res.status(500).json({ error: 'Error en servidor' }); } });
+app.post('/api/login', async (req, res) => { 
+    const { usuario, password } = req.body; 
+    try { 
+        const result = await pool.query('SELECT * FROM usuarios WHERE nombre_usuario = $1 AND contrasena = $2', [usuario, password]); 
+        if (result.rows.length > 0) res.json({ success: true, mensaje: 'Acceso concedido' }); 
+        else res.status(401).json({ success: false, mensaje: 'Credenciales incorrectas' }); 
+    } catch (err) { res.status(500).json({ error: 'Error en servidor' }); } 
+});
+
 app.get('/api/usuario-admin', async (req, res) => { try { const r = await pool.query('SELECT id, nombre_usuario FROM usuarios ORDER BY id ASC LIMIT 1'); res.json(r.rows[0]); } catch (err) { res.status(500).send(err); } });
 app.put('/api/usuario/:id', async (req, res) => { const { id } = req.params; const { nuevo_nombre, nueva_contrasena } = req.body; try { await pool.query('UPDATE usuarios SET nombre_usuario = $1, contrasena = $2 WHERE id = $3', [nuevo_nombre, nueva_contrasena, id]); res.json({ success: true }); } catch (err) { res.status(500).send(err); } });
 
@@ -64,25 +88,55 @@ app.put('/api/productos/:id', upload.single('imagen'), async (req, res) => { con
 app.delete('/api/productos/:id', async (req, res) => { try { await pool.query('DELETE FROM aplicaciones WHERE producto_id = $1', [req.params.id]); await pool.query('DELETE FROM productos WHERE id = $1', [req.params.id]); res.json({ success: true }); } catch (err) { res.status(500).send(err); } });
 
 // ===============================================
-// SISTEMA DE VENTAS (POS)
+// SISTEMA DE VENTAS (Caja Registradora POS)
 // ===============================================
 app.post('/api/ventas', upload.single('comprobante'), async (req, res) => {
     const { metodo_pago, total, detalles } = req.body;
     const productosVendidos = JSON.parse(detalles || '[]');
     const comprobante_url = req.file ? req.file.path : null;
+    
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
-        const resVenta = await client.query('INSERT INTO ventas (metodo_pago, total, comprobante_url) VALUES ($1, $2, $3) RETURNING id', [metodo_pago, total, comprobante_url]);
+        
+        // 1. Guardar la factura principal
+        const resVenta = await client.query(
+            'INSERT INTO ventas (metodo_pago, total, comprobante_url) VALUES ($1, $2, $3) RETURNING id', 
+            [metodo_pago, total, comprobante_url]
+        );
         const ventaId = resVenta.rows[0].id;
+        
+        // 2. Guardar el detalle y descontar del inventario
         for (let item of productosVendidos) {
             const subtotal = item.cantidad * item.precio;
-            await client.query('INSERT INTO detalles_venta (venta_id, producto_id, cantidad, precio_unitario, subtotal) VALUES ($1, $2, $3, $4, $5)', [ventaId, item.id, item.cantidad, item.precio, subtotal]);
-            await client.query('UPDATE productos SET stock = stock - $1 WHERE id = $2', [item.cantidad, item.id]);
+            
+            await client.query(
+                'INSERT INTO detalles_venta (venta_id, producto_id, cantidad, precio_unitario, subtotal) VALUES ($1, $2, $3, $4, $5)', 
+                [ventaId, item.id, item.cantidad, item.precio, subtotal]
+            );
+            
+            await client.query(
+                'UPDATE productos SET stock = stock - $1 WHERE id = $2', 
+                [item.cantidad, item.id]
+            );
         }
+        
         await client.query('COMMIT');
         res.json({ success: true, venta_id: ventaId });
-    } catch (error) { await client.query('ROLLBACK'); res.status(500).json({ error: 'Error procesando la venta' }); } finally { client.release(); }
+    } catch (error) { 
+        await client.query('ROLLBACK'); 
+        console.error("Error en transacción POS:", error);
+        res.status(500).json({ error: 'Error procesando la venta' }); 
+    } finally { 
+        client.release(); 
+    }
+});
+
+app.get('/api/ventas', async (req, res) => { 
+    try { 
+        const r = await pool.query('SELECT * FROM ventas ORDER BY fecha DESC'); 
+        res.json(r.rows); 
+    } catch (err) { res.status(500).send(err); } 
 });
 
 app.listen(PORT, () => { console.log(`✅ Backend corriendo en puerto ${PORT}`); });
