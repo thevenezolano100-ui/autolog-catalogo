@@ -58,7 +58,7 @@ function Admin() {
 
   const mostrarAlerta = (texto) => { 
     setMensaje(texto); 
-    setTimeout(() => setMensaje(''), 6000); 
+    setTimeout(() => setMensaje(''), 5000); 
   };
 
   const sincronizarVentasOffline = async () => {
@@ -78,7 +78,7 @@ function Admin() {
   };
 
   // ==========================================
-  // CAJA REGISTRADORA (CON MANEJO DE ERRORES REAL)
+  // CAJA REGISTRADORA (POS)
   // ==========================================
   const posAgregar = (producto) => {
     if (producto.stock <= 0) return;
@@ -108,28 +108,26 @@ function Admin() {
         if (comprobanteArchivo) formData.append('comprobante', comprobanteArchivo);
         
         try {
-            mostrarAlerta('⏳ Procesando venta en el servidor...');
+            mostrarAlerta('⏳ Procesando pago y conectando con base de datos...');
             const res = await fetch(`${URL_BACKEND}/api/ventas`, { method: 'POST', body: formData });
+            const respuestaTexto = await res.text();
             
-            const respuestaTexto = await res.text(); // Leemos qué nos devuelve el servidor
-
             if(res.ok) { 
-                mostrarAlerta('✅ ¡Venta registrada exitosamente!'); 
+                mostrarAlerta('✅ Venta registrada correctamente en la nube.'); 
                 setPosCarrito([]); setComprobanteArchivo(null); 
                 const fileInput = document.getElementById('inputComp');
                 if(fileInput) fileInput.value = '';
                 cargarTodo(); 
             } else { 
-                // SI FALLA, EXTRAEMOS EL ERROR EXACTO PARA PODER ARREGLARLO
                 try {
                     const errorJson = JSON.parse(respuestaTexto);
-                    mostrarAlerta(`❌ Error del Servidor: ${errorJson.error || 'Fallo desconocido'}`);
+                    mostrarAlerta(`❌ Error BD: ${errorJson.error}`);
                 } catch {
-                    mostrarAlerta(`❌ Servidor Caído (¿Error de Cloudinary?): ${respuestaTexto.substring(0, 80)}...`);
+                    mostrarAlerta(`❌ Fallo de servidor. Revisa si colocaste tu clave de Neon en index.js`);
                 }
             }
         } catch (e) { 
-            mostrarAlerta('❌ Error crítico: No se pudo conectar con el servidor.'); 
+            mostrarAlerta('❌ Falla de red al intentar contactar el servidor.'); 
         }
     } else {
         const vOffline = { ...datosVenta, idOffline: Date.now() };
@@ -148,7 +146,7 @@ function Admin() {
   
   const guardarRepuesto = async (e) => {
     e.preventDefault();
-    if(!isOnline) return alert("❌ Se requiere internet para guardar productos.");
+    if(!isOnline) return alert("❌ Se requiere internet para modificar la base de datos.");
     const datos = new FormData();
     datos.append('codigo_pieza', formulario.codigo_pieza);
     datos.append('descripcion', formulario.descripcion);
@@ -157,14 +155,17 @@ function Admin() {
     datos.append('marca_id', formulario.marca_id);
     datos.append('categoria_id', formulario.categoria_id);
     datos.append('imagen_url_actual', formulario.imagen_url_actual);
-    datos.append('vehiculos_compatibles', '[]');
     if (imagenArchivo) datos.append('imagen', imagenArchivo);
     
     try {
       const url = repuestoEditando ? `${URL_BACKEND}/api/productos/${formulario.id}` : `${URL_BACKEND}/api/productos`;
       const res = await fetch(url, { method: repuestoEditando ? 'PUT' : 'POST', body: datos });
-      if (res.ok) { mostrarAlerta(repuestoEditando ? '✅ Producto actualizado' : '✅ Producto creado'); cancelarEdicion(); cargarTodo(); } 
-      else mostrarAlerta('❌ Error al procesar producto en la base de datos');
+      if (res.ok) { 
+        mostrarAlerta(repuestoEditando ? '✅ Repuesto actualizado' : '✅ Repuesto creado'); 
+        cancelarEdicion(); cargarTodo(); 
+      } else {
+        mostrarAlerta('❌ Error al guardar en base de datos. ¿Está configurado Neon?');
+      }
     } catch (e) { mostrarAlerta('❌ Error de conexión al guardar'); }
   };
 
@@ -180,14 +181,16 @@ function Admin() {
   };
   
   const borrarRepuesto = async (id) => { 
-    if(window.confirm('¿Borrar definitivamente?')) { await fetch(`${URL_BACKEND}/api/productos/${id}`, { method: 'DELETE' }); cargarTodo(); } 
+    if(window.confirm('¿Borrar este repuesto definitivamente?')) { 
+        await fetch(`${URL_BACKEND}/api/productos/${id}`, { method: 'DELETE' }); cargarTodo(); 
+    } 
   };
 
   // ==========================================
-  // CONFIGURACIÓN: REPARADA LA FUNCIÓN DE MARCAS
+  // CONFIGURACIÓN (MARCAS Y CATEGORIAS REPARADAS)
   // ==========================================
   const accionSimple = async (ruta, metodo, cuerpo) => { 
-    if(!isOnline) { alert("⚠️ Necesitas conexión a internet."); return; }
+    if(!isOnline) { mostrarAlerta("⚠️ Necesitas conexión a internet."); return; }
     try {
         const opciones = { method };
         if (cuerpo) {
@@ -195,23 +198,22 @@ function Admin() {
             opciones.body = JSON.stringify(cuerpo);
         }
         
-        mostrarAlerta('⏳ Procesando...');
+        mostrarAlerta('⏳ Conectando con la base de datos...');
         const res = await fetch(`${URL_BACKEND}/api/${ruta}`, opciones); 
-        
         const respuesta = await res.text();
         
         if(!res.ok) {
             try {
                 const err = JSON.parse(respuesta);
-                mostrarAlerta(`❌ No se puede procesar: ${err.error}`);
+                mostrarAlerta(`❌ Error: ${err.error}`);
             } catch {
-                mostrarAlerta(`❌ Error crítico del servidor.`);
+                mostrarAlerta(`❌ Fallo de servidor. Revisa tu conexión de Neon.tech.`);
             }
             return;
         }
-        mostrarAlerta('✅ Modificación guardada.');
+        mostrarAlerta('✅ ¡Modificación guardada con éxito!');
         cargarTodo(); 
-    } catch(e) { mostrarAlerta("❌ Error de red."); }
+    } catch(e) { mostrarAlerta("❌ Error de red. No hay conexión con el servidor."); }
   };
 
   return (
@@ -318,7 +320,7 @@ function Admin() {
                 <h3 className="font-black text-slate-900 text-lg mb-4">🏷️ Añadir o Borrar Marcas</h3>
                 <div className="flex gap-2 mb-6">
                     <input type="text" placeholder="Nueva Marca..." className="border-2 border-slate-300 p-3 rounded-xl flex-1 font-bold" value={nuevaMarca} onChange={e=>setNuevaMarca(e.target.value)}/>
-                    <button onClick={()=>{ if(nuevaMarca.trim()==="")return; accionSimple('marcas','POST',{nombre:nuevaMarca}); setNuevaMarca('');}} className="bg-slate-900 text-white px-5 rounded-xl font-black">Añadir</button>
+                    <button onClick={()=>{ if(nuevaMarca.trim()==="")return; accionSimple('marcas','POST',{nombre:nuevaMarca}); setNuevaMarca('');}} className="bg-slate-900 text-white px-5 rounded-xl font-black hover:bg-slate-800">Añadir</button>
                 </div>
                 <div className="max-h-80 overflow-y-auto space-y-2">
                     {marcasLista.map(m=>(
@@ -334,7 +336,7 @@ function Admin() {
                 <h3 className="font-black text-slate-900 text-lg mb-4">📂 Categorías Técnicas</h3>
                 <div className="flex gap-2 mb-6">
                     <input type="text" placeholder="Nueva Categoría..." className="border-2 border-slate-300 p-3 rounded-xl flex-1 font-bold" value={nuevaCategoria} onChange={e=>setNuevaCategoria(e.target.value)}/>
-                    <button onClick={()=>{ if(nuevaCategoria.trim()==="")return; accionSimple('categorias','POST',{nombre:nuevaCategoria}); setNuevaCategoria('');}} className="bg-slate-900 text-white px-5 rounded-xl font-black">Añadir</button>
+                    <button onClick={()=>{ if(nuevaCategoria.trim()==="")return; accionSimple('categorias','POST',{nombre:nuevaCategoria}); setNuevaCategoria('');}} className="bg-slate-900 text-white px-5 rounded-xl font-black hover:bg-slate-800">Añadir</button>
                 </div>
                 <div className="max-h-80 overflow-y-auto space-y-2">
                     {categoriasLista.map(c=>(

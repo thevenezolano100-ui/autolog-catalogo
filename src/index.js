@@ -12,7 +12,7 @@ app.use(cors());
 app.use(express.json());
 
 // ===============================================
-// 1. TUS CREDENCIALES (Cámbialas cuando puedas)
+// 1. TUS CREDENCIALES (¡NO OLVIDES CAMBIARLAS!)
 // ===============================================
 const ENLACE_NEON = 'postgresql://neondb_owner:npg_GSfl19XITPFj@ep-wispy-bonus-anshmeg3.c-6.us-east-1.aws.neon.tech/neondb?sslmode=require';
 const CLOUD_NAME = 'ddrqga65e';
@@ -20,13 +20,11 @@ const API_KEY = '781739566125483';
 const API_SECRET = '0Yja9-EHbn8ESfClJEuKitLi35k';
 
 // ===============================================
-// 2. ESCUDO ANTI-CAÍDAS DE BASE DE DATOS
+// 2. CONEXIÓN A BASE DE DATOS (NEON)
 // ===============================================
 let pool;
 try {
     pool = new Pool({ connectionString: ENLACE_NEON });
-    
-    // Si conecta, forzamos la creación de todas las tablas por si Neon está vacío
     pool.query(`
         CREATE TABLE IF NOT EXISTS usuarios (id SERIAL PRIMARY KEY, nombre_usuario VARCHAR(50), contrasena VARCHAR(50));
         CREATE TABLE IF NOT EXISTS marcas (id SERIAL PRIMARY KEY, nombre VARCHAR(100));
@@ -36,20 +34,17 @@ try {
         CREATE TABLE IF NOT EXISTS vehiculos (id SERIAL PRIMARY KEY, marca_auto VARCHAR(100), modelo VARCHAR(100), anio_inicio INT, anio_fin INT, motor VARCHAR(100));
         CREATE TABLE IF NOT EXISTS ventas (id SERIAL PRIMARY KEY, fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP, metodo_pago VARCHAR(50), total DECIMAL(10, 2), comprobante_url TEXT);
         CREATE TABLE IF NOT EXISTS detalles_venta (id SERIAL PRIMARY KEY, venta_id INT, producto_id INT, cantidad INT, precio_unitario DECIMAL(10, 2), subtotal DECIMAL(10, 2));
-    `).catch(err => console.log("Aviso interno de tablas BD:", err.message));
-
+    `).catch(err => console.log("Aviso interno BD:", err.message));
 } catch (error) {
-    console.error("⚠️ ADVERTENCIA: Enlace de Neon inválido. El servidor operará en modo restringido.");
-    pool = { query: async () => { throw new Error("Base de datos no configurada en index.js") } };
+    console.error("⚠️ Enlace de Neon inválido.");
 }
 
 // ===============================================
-// 3. ESCUDO ANTI-CAÍDAS DE CLOUDINARY
+// 3. CONEXIÓN A IMÁGENES (CLOUDINARY)
 // ===============================================
 let upload;
 if (CLOUD_NAME === 'TU_CLOUD_NAME' || !CLOUD_NAME) {
-    console.warn("⚠️ ADVERTENCIA: Cloudinary no configurado. Las fotos no se guardarán.");
-    upload = multer({ storage: multer.memoryStorage() }); // Modo seguro
+    upload = multer({ storage: multer.memoryStorage() }); // Modo seguro sin fotos
 } else {
     cloudinary.config({ cloud_name: CLOUD_NAME, api_key: API_KEY, api_secret: API_SECRET });
     const storage = new CloudinaryStorage({ cloudinary: cloudinary, params: { folder: 'autolog_repuestos' } });
@@ -57,22 +52,32 @@ if (CLOUD_NAME === 'TU_CLOUD_NAME' || !CLOUD_NAME) {
 }
 
 // ===============================================
-// RUTAS DEL SISTEMA (LOGIN, MARCAS Y CATEGORIAS)
+// RUTAS DE SISTEMA (LOGIN)
 // ===============================================
 app.post('/api/login', async (req, res) => { const { usuario, password } = req.body; try { const result = await pool.query('SELECT * FROM usuarios WHERE nombre_usuario = $1 AND contrasena = $2', [usuario, password]); if (result.rows.length > 0) res.json({ success: true, mensaje: 'Acceso concedido' }); else res.status(401).json({ success: false, mensaje: 'Credenciales incorrectas' }); } catch (err) { res.status(500).json({ error: err.message }); } });
-app.get('/api/usuario-admin', async (req, res) => { try { const r = await pool.query('SELECT id, nombre_usuario FROM usuarios ORDER BY id ASC LIMIT 1'); res.json(r.rows[0]); } catch (err) { res.status(500).send(err); } });
-app.put('/api/usuario/:id', async (req, res) => { const { id } = req.params; const { nuevo_nombre, nueva_contrasena } = req.body; try { await pool.query('UPDATE usuarios SET nombre_usuario = $1, contrasena = $2 WHERE id = $3', [nuevo_nombre, nueva_contrasena, id]); res.json({ success: true }); } catch (err) { res.status(500).send(err); } });
 
+// ===============================================
+// MARCAS Y CATEGORIAS (CON PROTECCIÓN DE BORRADO)
+// ===============================================
 app.get('/api/marcas', async (req, res) => { try { const r = await pool.query('SELECT * FROM marcas ORDER BY nombre'); res.json(r.rows); } catch (err) { res.status(500).json({ error: err.message }); } });
 app.post('/api/marcas', async (req, res) => { try { await pool.query('INSERT INTO marcas (nombre) VALUES ($1)', [req.body.nombre]); res.json({ success: true }); } catch (err) { res.status(500).json({ error: err.message }); } });
-app.put('/api/marcas/:id', async (req, res) => { try { await pool.query('UPDATE marcas SET nombre = $1 WHERE id = $2', [req.body.nombre, req.params.id]); res.json({ success: true }); } catch (err) { res.status(500).json({ error: err.message }); } });
-app.delete('/api/marcas/:id', async (req, res) => { try { await pool.query('DELETE FROM marcas WHERE id = $1', [req.params.id]); res.json({ success: true }); } catch (err) { res.status(500).json({ error: err.message }); } });
+app.delete('/api/marcas/:id', async (req, res) => { 
+    try { 
+        const check = await pool.query('SELECT id FROM productos WHERE marca_id = $1 LIMIT 1', [req.params.id]);
+        if (check.rows.length > 0) return res.status(400).json({ error: 'No puedes borrar una marca que ya tiene repuestos asignados en la bodega.' });
+        await pool.query('DELETE FROM marcas WHERE id = $1', [req.params.id]); res.json({ success: true }); 
+    } catch (err) { res.status(500).json({ error: err.message }); } 
+});
 
 app.get('/api/categorias', async (req, res) => { try { const r = await pool.query('SELECT * FROM categorias ORDER BY nombre'); res.json(r.rows); } catch (err) { res.status(500).json({ error: err.message }); } });
 app.post('/api/categorias', async (req, res) => { try { await pool.query('INSERT INTO categorias (nombre) VALUES ($1)', [req.body.nombre]); res.json({ success: true }); } catch (err) { res.status(500).json({ error: err.message }); } });
-app.delete('/api/categorias/:id', async (req, res) => { try { await pool.query('DELETE FROM categorias WHERE id = $1', [req.params.id]); res.json({ success: true }); } catch (err) { res.status(500).json({ error: err.message }); } });
-
-app.get('/api/vehiculos', async (req, res) => { try { const r = await pool.query('SELECT * FROM vehiculos ORDER BY marca_auto, modelo'); res.json(r.rows); } catch (err) { res.status(500).send(err); } });
+app.delete('/api/categorias/:id', async (req, res) => { 
+    try { 
+        const check = await pool.query('SELECT id FROM productos WHERE categoria_id = $1 LIMIT 1', [req.params.id]);
+        if (check.rows.length > 0) return res.status(400).json({ error: 'No puedes borrar una categoría que ya tiene repuestos asignados en la bodega.' });
+        await pool.query('DELETE FROM categorias WHERE id = $1', [req.params.id]); res.json({ success: true }); 
+    } catch (err) { res.status(500).json({ error: err.message }); } 
+});
 
 // ===============================================
 // INVENTARIO
@@ -109,4 +114,4 @@ app.post('/api/ventas', upload.single('comprobante'), async (req, res) => {
     }
 });
 
-app.listen(PORT, () => { console.log(`✅ Backend blindado corriendo en puerto ${PORT}`); });
+app.listen(PORT, () => { console.log(`✅ Backend corriendo en puerto ${PORT}`); });
