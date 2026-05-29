@@ -184,13 +184,14 @@ function Admin() {
   };
 
   // ==========================================
-  // CONFIGURACIÓN (CON DIAGNÓSTICO PROFUNDO)
+  // CONFIGURACIÓN (REPARACIÓN DE LA VARIABLE 'method')
   // ==========================================
   const accionSimple = async (ruta, metodo, cuerpo) => { 
     if(!isOnline) { alert("⚠️ Necesitas conexión a internet."); return; }
     
     try {
-        const opciones = { method };
+        // CORRECCIÓN EXACTA AQUÍ: 'method: metodo'
+        const opciones = { method: metodo }; 
         if (cuerpo) {
             opciones.headers = { 'Content-Type': 'application/json' };
             opciones.body = JSON.stringify(cuerpo);
@@ -217,7 +218,7 @@ function Admin() {
         cargarTodo(); 
     } catch(e) { 
         setMensaje('');
-        alert(`❌ Error de Red Detallado: ${e.message}.`); 
+        alert(`❌ Error de Red Detallado: ${e.message}`); 
     }
   };
 
