@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react';
-import * as XLSX from 'xlsx';
 import localforage from 'localforage';
 
 const URL_BACKEND = 'https://autolog-catalogo.onrender.com';
 
 function Admin() {
-  const [tabActiva, setTabActiva] = useState('POS'); // Pestañas: POS, INVENTARIO, VEHICULOS, AUDITORIA, CONFIG
+  const [tabActiva, setTabActiva] = useState('POS'); 
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [mensaje, setMensaje] = useState('');
   
@@ -16,7 +15,6 @@ function Admin() {
   const [ventasList, setVentasList] = useState([]);
   const [ventasPendientesOffline, setVentasPendientesOffline] = useState(0);
 
-  // FORMULARIO DE INVENTARIO RESTAURADO AL 100%
   const [formulario, setFormulario] = useState({ id: null, codigo_pieza: '', descripcion: '', precio: '', stock: '', marca_id: '', categoria_id: '', vehiculos_compatibles: [], imagen_url_actual: '' });
   const [repuestoEditando, setRepuestoEditando] = useState(false);
   const [imagenArchivo, setImagenArchivo] = useState(null);
@@ -31,58 +29,56 @@ function Admin() {
   const [comprobanteArchivo, setComprobanteArchivo] = useState(null);
 
   useEffect(() => {
-    const handleOnline = () => { setIsOnline(true); sincronizarVentasOffline(); };
+    const handleOnline = () => { setIsOnline(true); cargarTodo(); };
     const handleOffline = () => setIsOnline(false);
     window.addEventListener('online', handleOnline); window.addEventListener('offline', handleOffline);
     cargarTodo(); contarVentasOffline();
     return () => { window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); };
   }, []);
 
-  const contarVentasOffline = async () => { 
-    const p = await localforage.getItem('ventas_pendientes') || []; 
-    setVentasPendientesOffline(p.length); 
-  };
+  const contarVentasOffline = async () => { const p = await localforage.getItem('ventas_pendientes') || []; setVentasPendientesOffline(p.length); };
 
+  // CARGA DE DATOS DESACOPLADA (ELIMINA EL FILTRO DE CAÍDA EN CADENA)
   const cargarTodo = async () => {
+    // 1. Cargar Inventario
     try {
-      const [resInv, resCat, resMar, resVeh, resVentas] = await Promise.all([ 
-          fetch(`${URL_BACKEND}/api/productos`), fetch(`${URL_BACKEND}/api/categorias`), 
-          fetch(`${URL_BACKEND}/api/marcas`), fetch(`${URL_BACKEND}/api/vehiculos`), fetch(`${URL_BACKEND}/api/ventas`)
-      ]);
-      const dataInv = await resInv.json(); const dataCat = await resCat.json(); const dataMar = await resMar.json(); 
-      const dataVeh = await resVeh.json(); const dataVentas = await resVentas.json();
-      
-      setInventario(dataInv); setCategoriasLista(dataCat); setMarcasLista(dataMar); setVehiculosLista(dataVeh);
-      if(dataVentas && Array.isArray(dataVentas)) setVentasList(dataVentas);
-      
-      await localforage.setItem('cache_productos', dataInv);
-      if(!repuestoEditando) {
-        setFormulario(prev => ({ ...prev, categoria_id: dataCat[0]?.id || '', marca_id: dataMar[0]?.id || '' }));
-      }
-    } catch (e) {
+      const res = await fetch(`${URL_BACKEND}/api/productos`);
+      const data = await res.json(); setInventario(data);
+      await localforage.setItem('cache_productos', data);
+    } catch(e) {
       const cache = await localforage.getItem('cache_productos'); if(cache) setInventario(cache);
     }
+
+    // 2. Cargar Categorías
+    try {
+      const res = await fetch(`${URL_BACKEND}/api/categorias`);
+      const data = await res.json(); setCategoriasLista(data);
+      if(!repuestoEditando && data.length > 0) setFormulario(prev => ({ ...prev, categoria_id: data[0].id }));
+    } catch(e) { console.log("Categorías vacías o inaccesibles."); }
+
+    // 3. Cargar Marcas
+    try {
+      const res = await fetch(`${URL_BACKEND}/api/marcas`);
+      const data = await res.json(); setMarcasLista(data);
+      if(!repuestoEditando && data.length > 0) setFormulario(prev => ({ ...prev, marca_id: data[0].id }));
+    } catch(e) { console.log("Marcas vacías o inaccesibles."); }
+
+    // 4. Cargar Vehículos
+    try {
+      const res = await fetch(`${URL_BACKEND}/api/vehiculos`);
+      const data = await res.json(); setVehiculosLista(data);
+    } catch(e) { console.log("Vehículos vacíos."); }
+
+    // 5. Cargar Ventas
+    try {
+      const res = await fetch(`${URL_BACKEND}/api/ventas`);
+      const data = await res.json(); if(Array.isArray(data)) setVentasList(data);
+    } catch(e) { console.log("Bandeja de auditoría vacía."); }
   };
 
   const mostrarAlerta = (texto) => { setMensaje(texto); setTimeout(() => setMensaje(''), 5000); };
 
-  const sincronizarVentasOffline = async () => {
-    const pendientes = await localforage.getItem('ventas_pendientes') || [];
-    if (pendientes.length === 0) return;
-    mostrarAlerta(`🔄 Subiendo ${pendientes.length} ventas locales...`);
-    let exitosas = [];
-    for (let v of pendientes) {
-      try {
-        const res = await fetch(`${URL_BACKEND}/api/ventas`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ metodo_pago: v.metodo_pago, total: v.total, detalles: JSON.stringify(v.detalles) }) });
-        if (res.ok) exitosas.push(v.idOffline);
-      } catch (err) {}
-    }
-    await localforage.setItem('ventas_pendientes', pendientes.filter(v => !exitosas.includes(v.idOffline)));
-    contarVentasOffline(); cargarTodo();
-    if(exitosas.length > 0) mostrarAlerta('✅ Sincronización exitosa.');
-  };
-
-  // PUNTO DE VENTA (POS)
+  // INTERFAZ CAJA REGISTRADORA
   const posAgregar = (producto) => {
     if (producto.stock <= 0) return;
     setPosCarrito(prev => {
@@ -105,8 +101,7 @@ function Admin() {
         try {
             setMensaje('⏳ Procesando pago...');
             const res = await fetch(`${URL_BACKEND}/api/ventas`, { method: 'POST', body: formData });
-            const respuestaTexto = await res.text();
-            setMensaje('');
+            const respuestaTexto = await res.text(); setMensaje('');
             if(res.ok) { 
                 alert('✅ ¡Venta registrada!'); setPosCarrito([]); setComprobanteArchivo(null); 
                 const fileInput = document.getElementById('inputComp'); if(fileInput) fileInput.value = '';
@@ -120,24 +115,31 @@ function Admin() {
     }
   };
 
-  // INVENTARIO CRUD
+  // INVENTARIO ACCIONES
   const manejarCambio = (e) => setFormulario({ ...formulario, [e.target.name]: e.target.value });
   
   const toggleVehiculo = (vehiculoId) => {
     setFormulario(prev => {
         const compatibles = prev.vehiculos_compatibles || [];
-        if (compatibles.includes(vehiculoId)) return { ...prev, ...{ vehiculos_compatibles: compatibles.filter(id => id !== vehiculoId) } };
-        else return { ...prev, ...{ vehiculos_compatibles: [...compatibles, vehiculoId] } };
+        if (compatibles.includes(vehiculoId)) return { ...prev, vehiculos_compatibles: compatibles.filter(id => id !== vehiculoId) };
+        else return { ...prev, vehiculos_compatibles: [...compatibles, vehiculoId] };
     });
   };
 
   const guardarRepuesto = async (e) => {
     e.preventDefault();
     if(!isOnline) return alert("❌ Se requiere internet.");
+    
+    // VALIDACIÓN PREVENTIVA DE SELECCIÓN DE LLAVES RELACIONALES
+    const m_id = formulario.marca_id || marcasLista[0]?.id;
+    const c_id = formulario.categoria_id || categoriasLista[0]?.id;
+
+    if(!m_id || !c_id) return alert("❌ Operación abortada: Debes tener al menos una marca y una categoría registradas en el sistema.");
+
     const datos = new FormData();
     datos.append('codigo_pieza', formulario.codigo_pieza); datos.append('descripcion', formulario.descripcion);
     datos.append('precio', formulario.precio || 0); datos.append('stock', formulario.stock || 0);
-    datos.append('marca_id', formulario.marca_id); datos.append('categoria_id', formulario.categoria_id);
+    datos.append('marca_id', m_id); datos.append('categoria_id', c_id);
     datos.append('vehiculos_compatibles', JSON.stringify(formulario.vehiculos_compatibles || []));
     datos.append('imagen_url_actual', formulario.imagen_url_actual);
     if (imagenArchivo) datos.append('imagen', imagenArchivo);
@@ -145,7 +147,7 @@ function Admin() {
     try {
       const url = repuestoEditando ? `${URL_BACKEND}/api/productos/${formulario.id}` : `${URL_BACKEND}/api/productos`;
       const res = await fetch(url, { method: repuestoEditando ? 'PUT' : 'POST', body: datos });
-      if (res.ok) { alert('✅ Repuesto guardado'); cancelarEdicion(); cargarTodo(); } else { alert('❌ Error en base de datos.'); }
+      if (res.ok) { alert('✅ Repuesto guardado'); cancelarEdicion(); cargarTodo(); } else { alert('❌ Error en base de datos al guardar.'); }
     } catch (e) { alert(`❌ Error de conexión`); }
   };
 
@@ -162,34 +164,34 @@ function Admin() {
   
   const borrarRepuesto = async (id) => { if(window.confirm('¿Borrar definitivamente?')) { await fetch(`${URL_BACKEND}/api/productos/${id}`, { method: 'DELETE' }); cargarTodo(); } };
 
-  // ACCIONES DE CONFIGURACIÓN
+  // CONTROLADORES DE AJUSTES GENERALES (MÉTODO FIJADO)
   const accionSimple = async (ruta, metodo, cuerpo) => { 
     if(!isOnline) { alert("⚠️ Necesitas internet."); return; }
     try {
         const opciones = { method: metodo }; 
         if (cuerpo) { opciones.headers = { 'Content-Type': 'application/json' }; opciones.body = JSON.stringify(cuerpo); }
-        setMensaje('⏳ Procesando...');
+        setMensaje('⏳ Sincronizando con el servidor...');
         const res = await fetch(`${URL_BACKEND}/api/${ruta}`, opciones); const respuesta = await res.text(); setMensaje(''); 
-        if(!res.ok) { try { const err = JSON.parse(respuesta); alert(`❌ Error: ${err.error}`); } catch { alert(`❌ Error Servidor.`); } return; }
-        alert('✅ ¡Éxito en la operación!'); setNuevaMarca(''); setNuevaCategoria(''); setNuevoVehiculo({marca_auto:'', modelo:'', motor:''}); cargarTodo(); 
-    } catch(e) { setMensaje(''); alert(`❌ Falla red.`); }
+        if(!res.ok) { try { const err = JSON.parse(respuesta); alert(`❌ Servidor indica: ${err.error}`); } catch { alert(`❌ Error Estructural.`); } return; }
+        alert('✅ ¡Proceso completado de forma exitosa!'); setNuevaMarca(''); setNuevaCategoria(''); setNuevoVehiculo({marca_auto:'', modelo:'', motor:''}); cargarTodo(); 
+    } catch(e) { setMensaje(''); alert(`❌ Falla de red: Servidor no disponible.`); }
   };
 
   return (
     <div className="max-w-7xl mx-auto py-8 px-6">
       
-      {/* NAVEGACIÓN COMPLETA DEL ERP */}
+      {/* MENÚ DE SECCIONES COMPLETAS */}
       <div className="flex flex-wrap gap-2 mb-8 border-b-2 border-slate-200 pb-4">
-        <button onClick={()=>setTabActiva('POS')} className={`font-black px-4 py-2 rounded-xl transition-all ${tabActiva === 'POS' ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}>🛒 POS / Ventas</button>
+        <button onClick={()=>setTabActiva('POS')} className={`font-black px-4 py-2 rounded-xl transition-all ${tabActiva === 'POS' ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}>🛒 POS / Caja</button>
         <button onClick={()=>setTabActiva('INVENTARIO')} className={`font-black px-4 py-2 rounded-xl transition-all ${tabActiva === 'INVENTARIO' ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}>📦 Inventario Físico</button>
-        <button onClick={()=>setTabActiva('VEHICULOS')} className={`font-black px-4 py-2 rounded-xl transition-all ${tabActiva === 'VEHICULOS' ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}>🚗 Compatibilidad Autos/Motos</button>
+        <button onClick={()=>setTabActiva('VEHICULOS')} className={`font-black px-4 py-2 rounded-xl transition-all ${tabActiva === 'VEHICULOS' ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}>🚗 Ajustar Autos/Motos</button>
         <button onClick={()=>setTabActiva('AUDITORIA')} className={`font-black px-4 py-2 rounded-xl transition-all ${tabActiva === 'AUDITORIA' ? 'bg-emerald-600 text-white shadow-md' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}>💰 Auditoría de Pagos</button>
-        <button onClick={()=>setTabActiva('CONFIG')} className={`font-black px-4 py-2 rounded-xl transition-all ${tabActiva === 'CONFIG' ? 'bg-slate-800 text-white shadow-md' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}>⚙️ Config Marcas/Cat</button>
+        <button onClick={()=>setTabActiva('CONFIG')} className={`font-black px-4 py-2 rounded-xl transition-all ${tabActiva === 'CONFIG' ? 'bg-slate-800 text-white shadow-md' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}>⚙️ Configuración Base</button>
       </div>
 
       {mensaje && <div className="mb-6 p-4 rounded-xl font-black text-sm bg-blue-100 text-blue-800 border-2 border-blue-300 text-center animate-pulse">{mensaje}</div>}
 
-      {/* CAJA REGISTRADORA */}
+      {/* POS */}
       {tabActiva === 'POS' && (
         <div className="flex flex-col lg:flex-row gap-6">
             <div className="flex-1 bg-white p-6 rounded-2xl border-2 border-slate-200">
@@ -232,41 +234,36 @@ function Admin() {
         </div>
       )}
 
-      {/* INVENTARIO FÍSICO (CON EL CAMPO DE FOTO RESTAURADO) */}
+      {/* INVENTARIO */}
       {tabActiva === 'INVENTARIO' && (
         <div className="space-y-8">
             <div className={`bg-white p-6 rounded-2xl border-2 transition-all ${repuestoEditando ? 'border-orange-300 ring-4 ring-orange-50' : 'border-slate-200'}`}>
-                <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-xl font-black text-slate-900">{repuestoEditando ? '✏️ Editando Producto' : '➕ Registrar Producto'}</h2>
-                    {repuestoEditando && <button onClick={cancelarEdicion} className="text-red-500 font-bold hover:underline">Cancelar Edición</button>}
-                </div>
+                <h2 className="text-xl font-black text-slate-900 mb-6">{repuestoEditando ? '✏️ Editando Producto' : '➕ Registrar Producto'}</h2>
                 <form onSubmit={guardarRepuesto} className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <div className="md:col-span-2"><label className="block text-xs font-black text-slate-500 mb-1">CÓDIGO DE PIEZA</label><input type="text" name="codigo_pieza" className="w-full bg-slate-50 border-2 border-slate-300 p-3 rounded-xl font-bold outline-none focus:border-blue-500" value={formulario.codigo_pieza} onChange={manejarCambio} required/></div>
-                        <div><label className="block text-xs font-black text-slate-500 mb-1">PRECIO ($)</label><input type="number" step="0.01" name="precio" className="w-full bg-slate-50 border-2 border-slate-300 p-3 rounded-xl font-black text-emerald-700 outline-none focus:border-blue-500" value={formulario.precio} onChange={manejarCambio} required/></div>
-                        <div><label className="block text-xs font-black text-slate-500 mb-1">CANTIDAD BODEGA</label><input type="number" name="stock" className="w-full bg-slate-50 border-2 border-slate-300 p-3 rounded-xl font-black text-blue-700 outline-none focus:border-blue-500" value={formulario.stock} onChange={manejarCambio} required/></div>
+                        <div className="md:col-span-2"><label className="block text-xs font-black text-slate-500 mb-1">CÓDIGO DE PIEZA</label><input type="text" name="codigo_pieza" className="w-full bg-slate-50 border-2 border-slate-300 p-3 rounded-xl font-bold outline-none" value={formulario.codigo_pieza} onChange={manejarCambio} required/></div>
+                        <div><label className="block text-xs font-black text-slate-500 mb-1">PRECIO ($)</label><input type="number" step="0.01" name="precio" className="w-full bg-slate-50 border-2 border-slate-300 p-3 rounded-xl font-black text-emerald-700 outline-none" value={formulario.precio} onChange={manejarCambio} required/></div>
+                        <div><label className="block text-xs font-black text-slate-500 mb-1">CANTIDAD BODEGA</label><input type="number" name="stock" className="w-full bg-slate-50 border-2 border-slate-300 p-3 rounded-xl font-black text-blue-700 outline-none" value={formulario.stock} onChange={manejarCambio} required/></div>
                         
                         <div className="md:col-span-2"><label className="block text-xs font-black text-slate-500 mb-1">MARCA FABRICANTE</label><select name="marca_id" className="w-full bg-slate-50 border-2 border-slate-300 p-3 rounded-xl font-bold outline-none" value={formulario.marca_id} onChange={manejarCambio}>{marcasLista.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select></div>
                         <div className="md:col-span-2"><label className="block text-xs font-black text-slate-500 mb-1">CATEGORÍA</label><select name="categoria_id" className="w-full bg-slate-50 border-2 border-slate-300 p-3 rounded-xl font-bold outline-none" value={formulario.categoria_id} onChange={manejarCambio}>{categoriasLista.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select></div>
                         
-                        <div className="md:col-span-4"><label className="block text-xs font-black text-slate-500 mb-1">DESCRIPCIÓN COMERCIAL</label><input type="text" name="descripcion" className="w-full bg-slate-50 border-2 border-slate-300 p-3 rounded-xl font-bold outline-none focus:border-blue-500" value={formulario.descripcion} onChange={manejarCambio} required/></div>
-                        
-                        {/* 📸 CAMPO DE FOTO REINSTALADO CORRECTAMENTE */}
-                        <div className="md:col-span-4"><label className="block text-xs font-black text-slate-500 mb-1">IMAGEN / FOTO DEL RECAMBIO {repuestoEditando && '(Dejar vacío para mantener actual)'}</label><input id="inputImagen" type="file" accept="image/*" onChange={(e) => setImagenArchivo(e.target.files[0])} className="w-full text-sm font-bold text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-blue-100 file:text-blue-800 cursor-pointer"/></div>
+                        <div className="md:col-span-4"><label className="block text-xs font-black text-slate-500 mb-1">DESCRIPCIÓN</label><input type="text" name="descripcion" className="w-full bg-slate-50 border-2 border-slate-300 p-3 rounded-xl font-bold outline-none" value={formulario.descripcion} onChange={manejarCambio} required/></div>
+                        <div className="md:col-span-4"><label className="block text-xs font-black text-slate-500 mb-1">IMAGEN / FOTO DEL REPUESTO</label><input id="inputImagen" type="file" accept="image/*" onChange={(e) => setImagenArchivo(e.target.files[0])} className="w-full text-sm font-bold text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-blue-100 file:text-blue-800"/></div>
 
                         <div className="md:col-span-4 bg-slate-50 p-4 rounded-xl border-2 border-slate-200">
-                            <label className="block text-sm font-black text-indigo-700 mb-3">🚗 VEHÍCULOS COMPATIBLES CON ESTA PIEZA</label>
+                            <label className="block text-sm font-black text-indigo-700 mb-3">🚗 ASIGNAR VEHÍCULOS COMPATIBLES</label>
                             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-h-40 overflow-y-auto">
                                 {vehiculosLista.map(v => (
-                                    <label key={v.id} className="flex items-center gap-2 cursor-pointer bg-white p-2 border rounded-lg hover:bg-indigo-50">
+                                    <label key={v.id} className="flex items-center gap-2 cursor-pointer bg-white p-2 border rounded-lg">
                                         <input type="checkbox" className="w-4 h-4 accent-indigo-600" checked={(formulario.vehiculos_compatibles || []).includes(v.id)} onChange={() => toggleVehiculo(v.id)} />
-                                        <span className="text-xs font-bold text-slate-700 truncate">{v.marca_auto} {v.modelo}</span>
+                                        <span className="text-xs font-bold text-slate-700">{v.marca_auto} {v.modelo}</span>
                                     </label>
                                 ))}
                             </div>
                         </div>
                     </div>
-                    <button type="submit" className={`w-full text-white font-black text-lg py-4 rounded-xl shadow-md ${repuestoEditando ? 'bg-orange-500 hover:bg-orange-600' : 'bg-slate-900 hover:bg-slate-800'}`}>{repuestoEditando ? 'ACTUALIZAR EN INVENTARIO' : 'REGISTRAR EN INVENTARIO'}</button>
+                    <button type="submit" className="w-full text-white font-black text-lg py-4 rounded-xl shadow-md bg-slate-900">{repuestoEditando ? 'ACTUALIZAR REPUESTO' : 'GUARDAR REPUESTO'}</button>
                 </form>
             </div>
 
@@ -300,25 +297,25 @@ function Admin() {
         <div className="bg-white p-6 rounded-2xl border-2 border-slate-200 shadow-sm">
             <h3 className="font-black text-slate-900 text-lg mb-6">🚗 Catálogo de Modelos (Línea de Compatibilidad)</h3>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-                <div><label className="block text-xs font-black text-slate-500 mb-1">MARCA MOTOR (Ej: Chevrolet, Yamaha)</label><input type="text" className="w-full border-2 border-slate-300 p-3 rounded-xl font-bold outline-none" value={nuevoVehiculo.marca_auto} onChange={e=>setNuevoVehiculo({...nuevoVehiculo, ...{marca_auto: e.target.value}})}/></div>
-                <div className="md:col-span-2"><label className="block text-xs font-black text-slate-500 mb-1">MODELO EXACTO (Ej: Aveo 2006-2015 / DT 125)</label><input type="text" className="w-full border-2 border-slate-300 p-3 rounded-xl font-bold outline-none" value={nuevoVehiculo.modelo} onChange={e=>setNuevoVehiculo({...nuevoVehiculo, ...{modelo: e.target.value}})}/></div>
+                <div><label className="block text-xs font-black text-slate-500 mb-1">MARCA (Ej: Chevrolet, Suzuki)</label><input type="text" className="w-full border-2 border-slate-300 p-3 rounded-xl font-bold outline-none" value={nuevoVehiculo.marca_auto} onChange={e=>setNuevoVehiculo({...nuevoVehiculo, marca_auto: e.target.value})}/></div>
+                <div className="md:col-span-2"><label className="block text-xs font-black text-slate-500 mb-1">MODELO (Ej: Aveo 2008 / GN 125)</label><input type="text" className="w-full border-2 border-slate-300 p-3 rounded-xl font-bold outline-none" value={nuevoVehiculo.modelo} onChange={e=>setNuevoVehiculo({...nuevoVehiculo, modelo: e.target.value})}/></div>
                 <div className="flex items-end"><button onClick={()=>{ if(nuevoVehiculo.marca_auto==='' || nuevoVehiculo.modelo==='') return alert('Llenar campos mandatorios'); accionSimple('vehiculos','POST',nuevoVehiculo); }} className="w-full bg-indigo-600 text-white p-3 rounded-xl font-black hover:bg-indigo-700 shadow-md">Registrar Línea</button></div>
             </div>
             <div className="max-h-96 overflow-y-auto space-y-2">
                 {vehiculosLista.map(v=>(
-                    <div key={v.id} className="flex justify-between items-center p-4 bg-slate-50 border-2 border-slate-100 rounded-xl shadow-sm">
+                    <div key={v.id} className="flex justify-between items-center p-4 bg-slate-50 border-2 border-slate-100 rounded-xl">
                         <span className="font-black text-slate-900 text-base">🚘 {v.marca_auto} {v.modelo}</span>
-                        <button onClick={()=>accionSimple(`vehiculos/${v.id}`,'DELETE')} className="text-red-600 bg-red-50 px-3 py-1.5 rounded-lg font-black hover:bg-red-100 transition">Retirar</button>
+                        <button onClick={()=>accionSimple(`vehiculos/${v.id}`,'DELETE')} className="text-red-600 bg-red-50 px-3 py-1.5 rounded-lg font-black hover:bg-red-100">Retirar</button>
                     </div>
                 ))}
             </div>
         </div>
       )}
 
-      {/* AUDITORÍA DE PAGOS CON CAPTURES VISUALES */}
+      {/* AUDITORÍA DE PAGOS */}
       {tabActiva === 'AUDITORIA' && (
         <div className="bg-white rounded-2xl border-2 border-slate-200 shadow-sm overflow-hidden">
-            <div className="p-6 bg-slate-900 text-white"><h2 className="text-xl font-black">💰 Conciliación y Auditoría Manual de Ventas</h2></div>
+            <div className="p-6 bg-slate-900 text-white"><h2 className="text-xl font-black">💰 Conciliación Manual de Ventas</h2></div>
             <div className="overflow-x-auto p-6">
                 <table className="w-full text-left">
                     <thead className="bg-slate-100"><tr className="font-black text-sm uppercase"><th className="p-4">Factura</th><th className="p-4">Fecha</th><th className="p-4">Método</th><th className="p-4 text-center">Monto</th><th className="p-4 text-center">Capture Digital</th><th className="p-4 text-right">Estatus</th></tr></thead>
@@ -330,7 +327,7 @@ function Admin() {
                                 <td className="p-4 font-black text-slate-700">{v.metodo_pago}</td>
                                 <td className="p-4 font-black text-emerald-600 text-xl text-center">${v.total}</td>
                                 <td className="p-4 text-center">
-                                    {v.comprobante_url ? <a href={v.comprobante_url} target="_blank" rel="noreferrer" className="bg-blue-100 text-blue-700 px-3 py-1.5 rounded-xl font-black text-xs hover:bg-blue-200 transition">🔍 Abrir Comprobante</a> : <span className="text-slate-400 font-bold text-xs italic">No requiere / Sin capture</span>}
+                                    {v.comprobante_url ? <a href={v.comprobante_url} target="_blank" rel="noreferrer" className="bg-blue-100 text-blue-700 px-3 py-1.5 rounded-xl font-black text-xs hover:bg-blue-200 transition">🔍 Ver Comprobante</a> : <span className="text-slate-400 font-bold text-xs italic">Sin capture</span>}
                                 </td>
                                 <td className="p-4 text-right">
                                     {v.estado === 'Validado' ? ( <span className="bg-emerald-100 text-emerald-800 px-3 py-2 rounded-lg font-black text-sm">✅ Pago Conciliado</span> ) : ( <button onClick={()=>accionSimple(`ventas/${v.id}/validar`,'PUT')} className="bg-orange-500 hover:bg-orange-600 text-white px-3 py-2 rounded-lg font-black shadow-md text-sm transition">Validar Transacción</button> )}
@@ -347,7 +344,7 @@ function Admin() {
       {tabActiva === 'CONFIG' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-white p-6 rounded-2xl border-2 border-slate-200">
-                <h3 className="font-black text-slate-900 text-lg mb-4">🏷️ Marcas Fabricantes</h3>
+                <h3 className="font-black text-slate-900 text-lg mb-4">🏷️ Marcas de Fábrica</h3>
                 <div className="flex gap-2 mb-6">
                     <input type="text" placeholder="Ej: Bosch" className="border-2 p-3 rounded-xl flex-1 font-bold outline-none" value={nuevaMarca} onChange={e=>setNuevaMarca(e.target.value)}/>
                     <button onClick={()=>{ if(nuevaMarca.trim()==="")return; accionSimple('marcas','POST',{nombre:nuevaMarca}); }} className="bg-slate-900 text-white px-5 rounded-xl font-black">Añadir</button>
@@ -361,7 +358,7 @@ function Admin() {
             <div className="bg-white p-6 rounded-2xl border-2 border-slate-200">
                 <h3 className="font-black text-slate-900 text-lg mb-4">📂 Categorías Estructurales</h3>
                 <div className="flex gap-2 mb-6">
-                    <input type="text" placeholder="Ej: Motor" className="border-2 p-3 rounded-xl flex-1 font-bold outline-none" value={nuevaCategoria} onChange={e=>setNuevaCategoria(e.target.value)}/>
+                    <input type="text" placeholder="Ej: Frenos" className="border-2 p-3 rounded-xl flex-1 font-bold outline-none" value={nuevaCategoria} onChange={e=>setNuevaCategoria(e.target.value)}/>
                     <button onClick={()=>{ if(nuevaCategoria.trim()==="")return; accionSimple('categorias','POST',{nombre:nuevaCategoria}); }} className="bg-slate-900 text-white px-5 rounded-xl font-black">Añadir</button>
                 </div>
                 <div className="max-h-60 overflow-y-auto space-y-2">
