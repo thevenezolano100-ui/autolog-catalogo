@@ -77,9 +77,6 @@ function Admin() {
     if(exitosas.length > 0) mostrarAlerta(`✅ Sincronización exitosa.`);
   };
 
-  // ==========================================
-  // CAJA REGISTRADORA (POS)
-  // ==========================================
   const posAgregar = (producto) => {
     if (producto.stock <= 0) return;
     setPosCarrito(prev => {
@@ -108,12 +105,12 @@ function Admin() {
         if (comprobanteArchivo) formData.append('comprobante', comprobanteArchivo);
         
         try {
-            mostrarAlerta('⏳ Procesando pago y conectando con base de datos...');
+            mostrarAlerta('⏳ Procesando pago... (Espera si el servidor está despertando)');
             const res = await fetch(`${URL_BACKEND}/api/ventas`, { method: 'POST', body: formData });
             const respuestaTexto = await res.text();
             
             if(res.ok) { 
-                mostrarAlerta('✅ Venta registrada correctamente en la nube.'); 
+                alert('✅ ¡Venta registrada exitosamente!'); 
                 setPosCarrito([]); setComprobanteArchivo(null); 
                 const fileInput = document.getElementById('inputComp');
                 if(fileInput) fileInput.value = '';
@@ -121,13 +118,13 @@ function Admin() {
             } else { 
                 try {
                     const errorJson = JSON.parse(respuestaTexto);
-                    mostrarAlerta(`❌ Error BD: ${errorJson.error}`);
+                    alert(`❌ Error Base de Datos: ${errorJson.error}`);
                 } catch {
-                    mostrarAlerta(`❌ Fallo de servidor. Revisa si colocaste tu clave de Neon en index.js`);
+                    alert(`❌ Error Servidor: Asegúrate de que las credenciales de Neon en index.js sean correctas.`);
                 }
             }
         } catch (e) { 
-            mostrarAlerta('❌ Falla de red al intentar contactar el servidor.'); 
+            alert('❌ Falla de red: No se pudo contactar con Render.'); 
         }
     } else {
         const vOffline = { ...datosVenta, idOffline: Date.now() };
@@ -135,18 +132,15 @@ function Admin() {
         await localforage.setItem('ventas_pendientes', [...p, vOffline]);
         const invNew = inventario.map(prod => { const v = posCarrito.find(x => x.id === prod.id); return v ? { ...prod, stock: prod.stock - v.cantidad } : prod; });
         setInventario(invNew); await localforage.setItem('cache_productos', invNew);
-        setPosCarrito([]); mostrarAlerta('⚠️ Venta guardada LOCALMENTE por falta de internet.'); contarVentasOffline();
+        setPosCarrito([]); alert('⚠️ Venta guardada LOCALMENTE por falta de internet.'); contarVentasOffline();
     }
   };
 
-  // ==========================================
-  // INVENTARIO CRUD
-  // ==========================================
   const manejarCambio = (e) => setFormulario({ ...formulario, [e.target.name]: e.target.value });
   
   const guardarRepuesto = async (e) => {
     e.preventDefault();
-    if(!isOnline) return alert("❌ Se requiere internet para modificar la base de datos.");
+    if(!isOnline) return alert("❌ Se requiere internet.");
     const datos = new FormData();
     datos.append('codigo_pieza', formulario.codigo_pieza);
     datos.append('descripcion', formulario.descripcion);
@@ -161,12 +155,12 @@ function Admin() {
       const url = repuestoEditando ? `${URL_BACKEND}/api/productos/${formulario.id}` : `${URL_BACKEND}/api/productos`;
       const res = await fetch(url, { method: repuestoEditando ? 'PUT' : 'POST', body: datos });
       if (res.ok) { 
-        mostrarAlerta(repuestoEditando ? '✅ Repuesto actualizado' : '✅ Repuesto creado'); 
+        alert(repuestoEditando ? '✅ Repuesto actualizado' : '✅ Repuesto creado'); 
         cancelarEdicion(); cargarTodo(); 
       } else {
-        mostrarAlerta('❌ Error al guardar en base de datos. ¿Está configurado Neon?');
+        alert('❌ Error al guardar en base de datos. Revisa Neon.');
       }
-    } catch (e) { mostrarAlerta('❌ Error de conexión al guardar'); }
+    } catch (e) { alert('❌ Error de conexión de red.'); }
   };
 
   const editarRepuesto = (p) => { 
@@ -181,16 +175,18 @@ function Admin() {
   };
   
   const borrarRepuesto = async (id) => { 
-    if(window.confirm('¿Borrar este repuesto definitivamente?')) { 
-        await fetch(`${URL_BACKEND}/api/productos/${id}`, { method: 'DELETE' }); cargarTodo(); 
+    if(window.confirm('¿Borrar definitivamente?')) { 
+        await fetch(`${URL_BACKEND}/api/productos/${id}`, { method: 'DELETE' }); 
+        cargarTodo(); 
     } 
   };
 
   // ==========================================
-  // CONFIGURACIÓN (MARCAS Y CATEGORIAS REPARADAS)
+  // CONFIGURACIÓN: BLINDADA CON ALERTAS VISIBLES
   // ==========================================
   const accionSimple = async (ruta, metodo, cuerpo) => { 
-    if(!isOnline) { mostrarAlerta("⚠️ Necesitas conexión a internet."); return; }
+    if(!isOnline) { alert("⚠️ Necesitas conexión a internet."); return; }
+    
     try {
         const opciones = { method };
         if (cuerpo) {
@@ -198,22 +194,32 @@ function Admin() {
             opciones.body = JSON.stringify(cuerpo);
         }
         
-        mostrarAlerta('⏳ Conectando con la base de datos...');
+        // Esta alerta avisa que la app está en espera (Útil si Render está dormido)
+        setMensaje('⏳ Enviando orden a Render... (Puede tardar hasta 50 segundos si estaba dormido)');
+        
         const res = await fetch(`${URL_BACKEND}/api/${ruta}`, opciones); 
         const respuesta = await res.text();
+        
+        setMensaje(''); // Borramos el mensaje de espera
         
         if(!res.ok) {
             try {
                 const err = JSON.parse(respuesta);
-                mostrarAlerta(`❌ Error: ${err.error}`);
+                alert(`❌ Error: ${err.error}`);
             } catch {
-                mostrarAlerta(`❌ Fallo de servidor. Revisa tu conexión de Neon.tech.`);
+                alert(`❌ Error de Servidor. ¿Guardaste bien el código en index.js y lo subiste a Github?`);
             }
             return;
         }
-        mostrarAlerta('✅ ¡Modificación guardada con éxito!');
+        
+        alert('✅ ¡Operación exitosa!');
+        setNuevaMarca('');
+        setNuevaCategoria('');
         cargarTodo(); 
-    } catch(e) { mostrarAlerta("❌ Error de red. No hay conexión con el servidor."); }
+    } catch(e) { 
+        setMensaje('');
+        alert("❌ Error de red crítico: No se pudo contactar al servidor Render."); 
+    }
   };
 
   return (
@@ -319,14 +325,14 @@ function Admin() {
             <div className="bg-white p-6 rounded-2xl border-2 border-slate-200">
                 <h3 className="font-black text-slate-900 text-lg mb-4">🏷️ Añadir o Borrar Marcas</h3>
                 <div className="flex gap-2 mb-6">
-                    <input type="text" placeholder="Nueva Marca..." className="border-2 border-slate-300 p-3 rounded-xl flex-1 font-bold" value={nuevaMarca} onChange={e=>setNuevaMarca(e.target.value)}/>
-                    <button onClick={()=>{ if(nuevaMarca.trim()==="")return; accionSimple('marcas','POST',{nombre:nuevaMarca}); setNuevaMarca('');}} className="bg-slate-900 text-white px-5 rounded-xl font-black hover:bg-slate-800">Añadir</button>
+                    <input type="text" placeholder="Nueva Marca..." className="border-2 border-slate-300 p-3 rounded-xl flex-1 font-bold outline-none focus:border-blue-500" value={nuevaMarca} onChange={e=>setNuevaMarca(e.target.value)}/>
+                    <button onClick={()=>{ if(nuevaMarca.trim()==="")return; accionSimple('marcas','POST',{nombre:nuevaMarca}); }} className="bg-slate-900 text-white px-5 rounded-xl font-black hover:bg-slate-800">Añadir</button>
                 </div>
                 <div className="max-h-80 overflow-y-auto space-y-2">
                     {marcasLista.map(m=>(
                         <div key={m.id} className="flex justify-between items-center p-3 bg-slate-50 border-2 border-slate-100 rounded-xl">
                             <span className="font-black text-slate-700">{m.nombre}</span>
-                            <button onClick={()=>accionSimple(`marcas/${m.id}`,'DELETE')} className="text-red-500 bg-red-50 w-8 h-8 rounded-lg font-black hover:bg-red-100">X</button>
+                            <button onClick={()=>accionSimple(`marcas/${m.id}`,'DELETE')} className="text-red-500 bg-red-50 w-8 h-8 rounded-lg font-black hover:bg-red-100 transition">X</button>
                         </div>
                     ))}
                 </div>
@@ -335,14 +341,14 @@ function Admin() {
             <div className="bg-white p-6 rounded-2xl border-2 border-slate-200">
                 <h3 className="font-black text-slate-900 text-lg mb-4">📂 Categorías Técnicas</h3>
                 <div className="flex gap-2 mb-6">
-                    <input type="text" placeholder="Nueva Categoría..." className="border-2 border-slate-300 p-3 rounded-xl flex-1 font-bold" value={nuevaCategoria} onChange={e=>setNuevaCategoria(e.target.value)}/>
-                    <button onClick={()=>{ if(nuevaCategoria.trim()==="")return; accionSimple('categorias','POST',{nombre:nuevaCategoria}); setNuevaCategoria('');}} className="bg-slate-900 text-white px-5 rounded-xl font-black hover:bg-slate-800">Añadir</button>
+                    <input type="text" placeholder="Nueva Categoría..." className="border-2 border-slate-300 p-3 rounded-xl flex-1 font-bold outline-none focus:border-blue-500" value={nuevaCategoria} onChange={e=>setNuevaCategoria(e.target.value)}/>
+                    <button onClick={()=>{ if(nuevaCategoria.trim()==="")return; accionSimple('categorias','POST',{nombre:nuevaCategoria}); }} className="bg-slate-900 text-white px-5 rounded-xl font-black hover:bg-slate-800">Añadir</button>
                 </div>
                 <div className="max-h-80 overflow-y-auto space-y-2">
                     {categoriasLista.map(c=>(
                         <div key={c.id} className="flex justify-between items-center p-3 bg-slate-50 border-2 border-slate-100 rounded-xl">
                             <span className="font-black text-slate-700">{c.nombre}</span>
-                            <button onClick={()=>accionSimple(`categorias/${c.id}`,'DELETE')} className="text-red-500 bg-red-50 w-8 h-8 rounded-lg font-black hover:bg-red-100">X</button>
+                            <button onClick={()=>accionSimple(`categorias/${c.id}`,'DELETE')} className="text-red-500 bg-red-50 w-8 h-8 rounded-lg font-black hover:bg-red-100 transition">X</button>
                         </div>
                     ))}
                 </div>
