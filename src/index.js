@@ -6,10 +6,13 @@ const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
 const app = express();
-const PORT = process.env.PORT || 3000; // Render asigna el puerto aquí
+const PORT = process.env.PORT || 3000;
 
-// BLINDAJE DE SEGURIDAD RED (CORS) - Permite que el frontend Vercel se comunique sin bloqueos
-app.use(cors({ origin: '*', methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'] }));
+// ===============================================
+// BLINDAJE CORS ABSOLUTO (LA CORRECCIÓN)
+// ===============================================
+app.use(cors()); 
+app.options('*', cors()); // Autoriza peticiones prevuelo (POST, DELETE, PUT) de navegadores estrictos
 app.use(express.json());
 
 // ===============================================
@@ -21,10 +24,10 @@ const API_KEY = '781739566125483';
 const API_SECRET = '0Yja9-EHbn8ESfClJEuKitLi35k';
 
 // ===============================================
-// 2. DIAGNÓSTICO DEL SERVIDOR (HEALTH CHECK)
+// 2. DIAGNÓSTICO DEL SERVIDOR
 // ===============================================
 app.get('/', (req, res) => {
-    res.status(200).send('✅ Servidor Backend AUTOLOG funcionando correctamente en la nube Render.');
+    res.status(200).send('✅ Servidor Backend AUTOLOG funcionando. CORS habilitado.');
 });
 
 // ===============================================
@@ -45,7 +48,7 @@ try {
         CREATE TABLE IF NOT EXISTS detalles_venta (id SERIAL PRIMARY KEY, venta_id INT, producto_id INT, cantidad INT, precio_unitario DECIMAL(10, 2), subtotal DECIMAL(10, 2));
     `).catch(err => console.log("Aviso interno BD:", err.message));
 } catch (error) {
-    console.warn("⚠️ Servidor en Modo Restringido: Faltan credenciales de Neon en index.js");
+    console.warn("⚠️ Modo Restringido: Faltan credenciales de Neon en index.js");
     pool = { query: async () => { throw new Error("Base de datos no configurada.") } };
 }
 

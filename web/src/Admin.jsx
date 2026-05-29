@@ -105,9 +105,10 @@ function Admin() {
         if (comprobanteArchivo) formData.append('comprobante', comprobanteArchivo);
         
         try {
-            mostrarAlerta('⏳ Procesando pago... (Espera si el servidor está despertando)');
+            setMensaje('⏳ Procesando pago...');
             const res = await fetch(`${URL_BACKEND}/api/ventas`, { method: 'POST', body: formData });
             const respuestaTexto = await res.text();
+            setMensaje('');
             
             if(res.ok) { 
                 alert('✅ ¡Venta registrada exitosamente!'); 
@@ -124,7 +125,8 @@ function Admin() {
                 }
             }
         } catch (e) { 
-            alert('❌ Falla de red: No se pudo contactar con Render.'); 
+            setMensaje('');
+            alert(`❌ Falla de red en POS: ${e.message}`); 
         }
     } else {
         const vOffline = { ...datosVenta, idOffline: Date.now() };
@@ -160,7 +162,7 @@ function Admin() {
       } else {
         alert('❌ Error al guardar en base de datos. Revisa Neon.');
       }
-    } catch (e) { alert('❌ Error de conexión de red.'); }
+    } catch (e) { alert(`❌ Error de conexión: ${e.message}`); }
   };
 
   const editarRepuesto = (p) => { 
@@ -182,7 +184,7 @@ function Admin() {
   };
 
   // ==========================================
-  // CONFIGURACIÓN: BLINDADA CON ALERTAS VISIBLES
+  // CONFIGURACIÓN (CON DIAGNÓSTICO PROFUNDO)
   // ==========================================
   const accionSimple = async (ruta, metodo, cuerpo) => { 
     if(!isOnline) { alert("⚠️ Necesitas conexión a internet."); return; }
@@ -194,20 +196,17 @@ function Admin() {
             opciones.body = JSON.stringify(cuerpo);
         }
         
-        // Esta alerta avisa que la app está en espera (Útil si Render está dormido)
-        setMensaje('⏳ Enviando orden a Render... (Puede tardar hasta 50 segundos si estaba dormido)');
-        
+        setMensaje('⏳ Conectando de forma segura...');
         const res = await fetch(`${URL_BACKEND}/api/${ruta}`, opciones); 
         const respuesta = await res.text();
-        
-        setMensaje(''); // Borramos el mensaje de espera
+        setMensaje(''); 
         
         if(!res.ok) {
             try {
                 const err = JSON.parse(respuesta);
-                alert(`❌ Error: ${err.error}`);
+                alert(`❌ Error del Servidor: ${err.error}`);
             } catch {
-                alert(`❌ Error de Servidor. ¿Guardaste bien el código en index.js y lo subiste a Github?`);
+                alert(`❌ Error Desconocido. Servidor respondió con código: ${res.status}`);
             }
             return;
         }
@@ -218,13 +217,12 @@ function Admin() {
         cargarTodo(); 
     } catch(e) { 
         setMensaje('');
-        alert("❌ Error de red crítico: No se pudo contactar al servidor Render."); 
+        alert(`❌ Error de Red Detallado: ${e.message}.`); 
     }
   };
 
   return (
     <div className="max-w-7xl mx-auto py-8 px-6">
-      
       <div className="flex flex-wrap gap-3 mb-8 border-b-2 border-slate-200 pb-4">
         <button onClick={()=>setTabActiva('POS')} className={`font-black px-5 py-3 rounded-xl transition-all ${tabActiva === 'POS' ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}>🛒 Caja Registradora</button>
         <button onClick={()=>setTabActiva('INVENTARIO')} className={`font-black px-5 py-3 rounded-xl transition-all ${tabActiva === 'INVENTARIO' ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}>📦 Inventario Físico</button>
@@ -326,7 +324,7 @@ function Admin() {
                 <h3 className="font-black text-slate-900 text-lg mb-4">🏷️ Añadir o Borrar Marcas</h3>
                 <div className="flex gap-2 mb-6">
                     <input type="text" placeholder="Nueva Marca..." className="border-2 border-slate-300 p-3 rounded-xl flex-1 font-bold outline-none focus:border-blue-500" value={nuevaMarca} onChange={e=>setNuevaMarca(e.target.value)}/>
-                    <button onClick={()=>{ if(nuevaMarca.trim()==="")return; accionSimple('marcas','POST',{nombre:nuevaMarca}); }} className="bg-slate-900 text-white px-5 rounded-xl font-black hover:bg-slate-800">Añadir</button>
+                    <button onClick={()=>{ if(nuevaMarca.trim()==="")return; accionSimple('marcas','POST',{nombre:nuevaMarca}); }} className="bg-slate-900 text-white px-5 rounded-xl font-black hover:bg-slate-800 transition">Añadir</button>
                 </div>
                 <div className="max-h-80 overflow-y-auto space-y-2">
                     {marcasLista.map(m=>(
@@ -342,7 +340,7 @@ function Admin() {
                 <h3 className="font-black text-slate-900 text-lg mb-4">📂 Categorías Técnicas</h3>
                 <div className="flex gap-2 mb-6">
                     <input type="text" placeholder="Nueva Categoría..." className="border-2 border-slate-300 p-3 rounded-xl flex-1 font-bold outline-none focus:border-blue-500" value={nuevaCategoria} onChange={e=>setNuevaCategoria(e.target.value)}/>
-                    <button onClick={()=>{ if(nuevaCategoria.trim()==="")return; accionSimple('categorias','POST',{nombre:nuevaCategoria}); }} className="bg-slate-900 text-white px-5 rounded-xl font-black hover:bg-slate-800">Añadir</button>
+                    <button onClick={()=>{ if(nuevaCategoria.trim()==="")return; accionSimple('categorias','POST',{nombre:nuevaCategoria}); }} className="bg-slate-900 text-white px-5 rounded-xl font-black hover:bg-slate-800 transition">Añadir</button>
                 </div>
                 <div className="max-h-80 overflow-y-auto space-y-2">
                     {categoriasLista.map(c=>(
