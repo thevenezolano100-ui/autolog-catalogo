@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
+import * as XLSX from 'xlsx';
 import localforage from 'localforage';
 
 const URL_BACKEND = 'https://autolog-catalogo.onrender.com';
 
 function Admin() {
-  const [tabActiva, setTabActiva] = useState('POS'); 
+  const [tabActiva, setTabActiva] = useState('POS'); // Pestañas: POS, INVENTARIO, VEHICULOS, AUDITORIA, CONFIG
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [mensaje, setMensaje] = useState('');
   
@@ -15,6 +16,7 @@ function Admin() {
   const [ventasList, setVentasList] = useState([]);
   const [ventasPendientesOffline, setVentasPendientesOffline] = useState(0);
 
+  // FORMULARIO DE INVENTARIO RESTAURADO AL 100%
   const [formulario, setFormulario] = useState({ id: null, codigo_pieza: '', descripcion: '', precio: '', stock: '', marca_id: '', categoria_id: '', vehiculos_compatibles: [], imagen_url_actual: '' });
   const [repuestoEditando, setRepuestoEditando] = useState(false);
   const [imagenArchivo, setImagenArchivo] = useState(null);
@@ -36,7 +38,10 @@ function Admin() {
     return () => { window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); };
   }, []);
 
-  const contarVentasOffline = async () => { const p = await localforage.getItem('ventas_pendientes') || []; setVentasPendientesOffline(p.length); };
+  const contarVentasOffline = async () => { 
+    const p = await localforage.getItem('ventas_pendientes') || []; 
+    setVentasPendientesOffline(p.length); 
+  };
 
   const cargarTodo = async () => {
     try {
@@ -51,7 +56,9 @@ function Admin() {
       if(dataVentas && Array.isArray(dataVentas)) setVentasList(dataVentas);
       
       await localforage.setItem('cache_productos', dataInv);
-      if(!repuestoEditando) setFormulario(prev => ({ ...prev, categoria_id: dataCat[0]?.id || '', marca_id: dataMar[0]?.id || '' }));
+      if(!repuestoEditando) {
+        setFormulario(prev => ({ ...prev, categoria_id: dataCat[0]?.id || '', marca_id: dataMar[0]?.id || '' }));
+      }
     } catch (e) {
       const cache = await localforage.getItem('cache_productos'); if(cache) setInventario(cache);
     }
@@ -59,9 +66,23 @@ function Admin() {
 
   const mostrarAlerta = (texto) => { setMensaje(texto); setTimeout(() => setMensaje(''), 5000); };
 
-  const sincronizarVentasOffline = async () => { /* Logica mantenida internamente */ };
+  const sincronizarVentasOffline = async () => {
+    const pendientes = await localforage.getItem('ventas_pendientes') || [];
+    if (pendientes.length === 0) return;
+    mostrarAlerta(`🔄 Subiendo ${pendientes.length} ventas locales...`);
+    let exitosas = [];
+    for (let v of pendientes) {
+      try {
+        const res = await fetch(`${URL_BACKEND}/api/ventas`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ metodo_pago: v.metodo_pago, total: v.total, detalles: JSON.stringify(v.detalles) }) });
+        if (res.ok) exitosas.push(v.idOffline);
+      } catch (err) {}
+    }
+    await localforage.setItem('ventas_pendientes', pendientes.filter(v => !exitosas.includes(v.idOffline)));
+    contarVentasOffline(); cargarTodo();
+    if(exitosas.length > 0) mostrarAlerta('✅ Sincronización exitosa.');
+  };
 
-  // POS
+  // PUNTO DE VENTA (POS)
   const posAgregar = (producto) => {
     if (producto.stock <= 0) return;
     setPosCarrito(prev => {
@@ -99,14 +120,14 @@ function Admin() {
     }
   };
 
-  // INVENTARIO
+  // INVENTARIO CRUD
   const manejarCambio = (e) => setFormulario({ ...formulario, [e.target.name]: e.target.value });
   
   const toggleVehiculo = (vehiculoId) => {
     setFormulario(prev => {
         const compatibles = prev.vehiculos_compatibles || [];
-        if (compatibles.includes(vehiculoId)) return { ...prev, vehiculos_compatibles: compatibles.filter(id => id !== vehiculoId) };
-        else return { ...prev, vehiculos_compatibles: [...compatibles, vehiculoId] };
+        if (compatibles.includes(vehiculoId)) return { ...prev, ...{ vehiculos_compatibles: compatibles.filter(id => id !== vehiculoId) } };
+        else return { ...prev, ...{ vehiculos_compatibles: [...compatibles, vehiculoId] } };
     });
   };
 
@@ -117,9 +138,10 @@ function Admin() {
     datos.append('codigo_pieza', formulario.codigo_pieza); datos.append('descripcion', formulario.descripcion);
     datos.append('precio', formulario.precio || 0); datos.append('stock', formulario.stock || 0);
     datos.append('marca_id', formulario.marca_id); datos.append('categoria_id', formulario.categoria_id);
-    datos.append('vehiculos_compatibles', JSON.stringify(formulario.vehiculos_compatibles));
+    datos.append('vehiculos_compatibles', JSON.stringify(formulario.vehiculos_compatibles || []));
     datos.append('imagen_url_actual', formulario.imagen_url_actual);
     if (imagenArchivo) datos.append('imagen', imagenArchivo);
+
     try {
       const url = repuestoEditando ? `${URL_BACKEND}/api/productos/${formulario.id}` : `${URL_BACKEND}/api/productos`;
       const res = await fetch(url, { method: repuestoEditando ? 'PUT' : 'POST', body: datos });
@@ -140,7 +162,7 @@ function Admin() {
   
   const borrarRepuesto = async (id) => { if(window.confirm('¿Borrar definitivamente?')) { await fetch(`${URL_BACKEND}/api/productos/${id}`, { method: 'DELETE' }); cargarTodo(); } };
 
-  // ACCIONES SIMPLES (CORS OK)
+  // ACCIONES DE CONFIGURACIÓN
   const accionSimple = async (ruta, metodo, cuerpo) => { 
     if(!isOnline) { alert("⚠️ Necesitas internet."); return; }
     try {
@@ -149,76 +171,25 @@ function Admin() {
         setMensaje('⏳ Procesando...');
         const res = await fetch(`${URL_BACKEND}/api/${ruta}`, opciones); const respuesta = await res.text(); setMensaje(''); 
         if(!res.ok) { try { const err = JSON.parse(respuesta); alert(`❌ Error: ${err.error}`); } catch { alert(`❌ Error Servidor.`); } return; }
-        alert('✅ ¡Exito!'); setNuevaMarca(''); setNuevaCategoria(''); setNuevoVehiculo({marca_auto:'', modelo:'', motor:''}); cargarTodo(); 
+        alert('✅ ¡Éxito en la operación!'); setNuevaMarca(''); setNuevaCategoria(''); setNuevoVehiculo({marca_auto:'', modelo:'', motor:''}); cargarTodo(); 
     } catch(e) { setMensaje(''); alert(`❌ Falla red.`); }
   };
 
   return (
     <div className="max-w-7xl mx-auto py-8 px-6">
+      
+      {/* NAVEGACIÓN COMPLETA DEL ERP */}
       <div className="flex flex-wrap gap-2 mb-8 border-b-2 border-slate-200 pb-4">
-        <button onClick={()=>setTabActiva('POS')} className={`font-black px-4 py-2 rounded-xl transition-all ${tabActiva === 'POS' ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}>🛒 POS</button>
-        <button onClick={()=>setTabActiva('INVENTARIO')} className={`font-black px-4 py-2 rounded-xl transition-all ${tabActiva === 'INVENTARIO' ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}>📦 Inventario</button>
-        <button onClick={()=>setTabActiva('VEHICULOS')} className={`font-black px-4 py-2 rounded-xl transition-all ${tabActiva === 'VEHICULOS' ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}>🚗 Autos/Motos</button>
-        <button onClick={()=>setTabActiva('AUDITORIA')} className={`font-black px-4 py-2 rounded-xl transition-all ${tabActiva === 'AUDITORIA' ? 'bg-emerald-600 text-white shadow-md' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}>💰 Pagos (Auditoría)</button>
-        <button onClick={()=>setTabActiva('CONFIG')} className={`font-black px-4 py-2 rounded-xl transition-all ${tabActiva === 'CONFIG' ? 'bg-slate-800 text-white shadow-md' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}>⚙️ Config</button>
+        <button onClick={()=>setTabActiva('POS')} className={`font-black px-4 py-2 rounded-xl transition-all ${tabActiva === 'POS' ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}>🛒 POS / Ventas</button>
+        <button onClick={()=>setTabActiva('INVENTARIO')} className={`font-black px-4 py-2 rounded-xl transition-all ${tabActiva === 'INVENTARIO' ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}>📦 Inventario Físico</button>
+        <button onClick={()=>setTabActiva('VEHICULOS')} className={`font-black px-4 py-2 rounded-xl transition-all ${tabActiva === 'VEHICULOS' ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}>🚗 Compatibilidad Autos/Motos</button>
+        <button onClick={()=>setTabActiva('AUDITORIA')} className={`font-black px-4 py-2 rounded-xl transition-all ${tabActiva === 'AUDITORIA' ? 'bg-emerald-600 text-white shadow-md' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}>💰 Auditoría de Pagos</button>
+        <button onClick={()=>setTabActiva('CONFIG')} className={`font-black px-4 py-2 rounded-xl transition-all ${tabActiva === 'CONFIG' ? 'bg-slate-800 text-white shadow-md' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}>⚙️ Config Marcas/Cat</button>
       </div>
 
       {mensaje && <div className="mb-6 p-4 rounded-xl font-black text-sm bg-blue-100 text-blue-800 border-2 border-blue-300 text-center animate-pulse">{mensaje}</div>}
 
-      {/* ======================================= */}
-      {/* PESTAÑA AUDITORIA DE PAGOS              */}
-      {/* ======================================= */}
-      {tabActiva === 'AUDITORIA' && (
-        <div className="bg-white rounded-2xl border-2 border-slate-200 shadow-sm overflow-hidden">
-            <div className="p-6 bg-slate-900 text-white"><h2 className="text-xl font-black">💰 Validación Manual de Pagos (Zelle / Pago Móvil)</h2></div>
-            <div className="overflow-x-auto p-6">
-                <table className="w-full text-left">
-                    <thead className="bg-slate-100"><tr className="font-black text-sm uppercase"><th className="p-4">Factura</th><th className="p-4">Fecha</th><th className="p-4">Método</th><th className="p-4 text-center">Total</th><th className="p-4 text-center">Capture</th><th className="p-4 text-right">Estado</th></tr></thead>
-                    <tbody className="divide-y-2 divide-slate-100">
-                        {ventasList.map(v => (
-                            <tr key={v.id} className="hover:bg-slate-50 transition">
-                                <td className="p-4 font-black">#00{v.id}</td>
-                                <td className="p-4 font-bold text-slate-600 text-sm">{new Date(v.fecha).toLocaleString()}</td>
-                                <td className="p-4 font-black text-slate-700">{v.metodo_pago}</td>
-                                <td className="p-4 font-black text-emerald-600 text-xl text-center">${v.total}</td>
-                                <td className="p-4 text-center">
-                                    {v.comprobante_url ? <a href={v.comprobante_url} target="_blank" className="bg-blue-100 text-blue-700 px-3 py-1 rounded-lg font-black hover:bg-blue-200">Ver Foto</a> : <span className="text-slate-400 font-bold text-xs">Sin Foto</span>}
-                                </td>
-                                <td className="p-4 text-right">
-                                    {v.estado === 'Validado' ? ( <span className="bg-emerald-100 text-emerald-800 px-3 py-2 rounded-lg font-black">✅ Aprobado</span> ) : ( <button onClick={()=>accionSimple(`ventas/${v.id}/validar`,'PUT')} className="bg-orange-500 hover:bg-orange-600 text-white px-3 py-2 rounded-lg font-black shadow-md transition">Validar Pago</button> )}
-                                </td>
-                            </tr>
-                        ))}
-                        {ventasList.length === 0 && <tr><td colSpan="6" className="p-8 text-center font-bold text-slate-400">No hay ventas registradas aún.</td></tr>}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-      )}
-
-      {/* ======================================= */}
-      {/* PESTAÑA VEHICULOS (MODELOS)             */}
-      {/* ======================================= */}
-      {tabActiva === 'VEHICULOS' && (
-        <div className="bg-white p-6 rounded-2xl border-2 border-slate-200 shadow-sm">
-            <h3 className="font-black text-slate-900 text-lg mb-6">🚗 Directorio de Vehículos (Autos / Motos)</h3>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-                <div><label className="block text-xs font-black text-slate-500 mb-1">MARCA (Ej: Chevrolet, Bera)</label><input type="text" className="w-full border-2 border-slate-300 p-3 rounded-xl font-bold outline-none" value={nuevoVehiculo.marca_auto} onChange={e=>setNuevoVehiculo({...nuevoVehiculo, marca_auto: e.target.value})}/></div>
-                <div className="md:col-span-2"><label className="block text-xs font-black text-slate-500 mb-1">MODELO EXACTO (Ej: Aveo 1.6)</label><input type="text" className="w-full border-2 border-slate-300 p-3 rounded-xl font-bold outline-none" value={nuevoVehiculo.modelo} onChange={e=>setNuevoVehiculo({...nuevoVehiculo, modelo: e.target.value})}/></div>
-                <div className="flex items-end"><button onClick={()=>{ if(nuevoVehiculo.marca_auto==='' || nuevoVehiculo.modelo==='') return alert('Llenar Marca y Modelo'); accionSimple('vehiculos','POST',nuevoVehiculo); }} className="w-full bg-indigo-600 text-white p-3 rounded-xl font-black hover:bg-indigo-700">Añadir Vehículo</button></div>
-            </div>
-            <div className="max-h-96 overflow-y-auto space-y-2">
-                {vehiculosLista.map(v=>(
-                    <div key={v.id} className="flex justify-between items-center p-4 bg-slate-50 border-2 border-slate-100 rounded-xl">
-                        <div><span className="font-black text-slate-900 text-lg">{v.marca_auto} {v.modelo}</span></div>
-                        <button onClick={()=>accionSimple(`vehiculos/${v.id}`,'DELETE')} className="text-red-500 bg-red-50 px-4 py-2 rounded-lg font-black hover:bg-red-100 transition">Borrar</button>
-                    </div>
-                ))}
-            </div>
-        </div>
-      )}
-
-      {/* PESTAÑA POS */}
+      {/* CAJA REGISTRADORA */}
       {tabActiva === 'POS' && (
         <div className="flex flex-col lg:flex-row gap-6">
             <div className="flex-1 bg-white p-6 rounded-2xl border-2 border-slate-200">
@@ -261,7 +232,7 @@ function Admin() {
         </div>
       )}
 
-      {/* PESTAÑA INVENTARIO */}
+      {/* INVENTARIO FÍSICO (CON EL CAMPO DE FOTO RESTAURADO) */}
       {tabActiva === 'INVENTARIO' && (
         <div className="space-y-8">
             <div className={`bg-white p-6 rounded-2xl border-2 transition-all ${repuestoEditando ? 'border-orange-300 ring-4 ring-orange-50' : 'border-slate-200'}`}>
@@ -271,18 +242,20 @@ function Admin() {
                 </div>
                 <form onSubmit={guardarRepuesto} className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <div className="md:col-span-2"><label className="block text-xs font-black text-slate-500 mb-1">CÓDIGO DE PIEZA</label><input type="text" name="codigo_pieza" className="w-full bg-slate-50 border-2 border-slate-300 p-3 rounded-xl font-bold outline-none" value={formulario.codigo_pieza} onChange={manejarCambio} required/></div>
-                        <div><label className="block text-xs font-black text-slate-500 mb-1">PRECIO ($)</label><input type="number" step="0.01" name="precio" className="w-full bg-slate-50 border-2 border-slate-300 p-3 rounded-xl font-black text-emerald-700 outline-none" value={formulario.precio} onChange={manejarCambio} required/></div>
-                        <div><label className="block text-xs font-black text-slate-500 mb-1">CANTIDAD BODEGA</label><input type="number" name="stock" className="w-full bg-slate-50 border-2 border-slate-300 p-3 rounded-xl font-black text-blue-700 outline-none" value={formulario.stock} onChange={manejarCambio} required/></div>
+                        <div className="md:col-span-2"><label className="block text-xs font-black text-slate-500 mb-1">CÓDIGO DE PIEZA</label><input type="text" name="codigo_pieza" className="w-full bg-slate-50 border-2 border-slate-300 p-3 rounded-xl font-bold outline-none focus:border-blue-500" value={formulario.codigo_pieza} onChange={manejarCambio} required/></div>
+                        <div><label className="block text-xs font-black text-slate-500 mb-1">PRECIO ($)</label><input type="number" step="0.01" name="precio" className="w-full bg-slate-50 border-2 border-slate-300 p-3 rounded-xl font-black text-emerald-700 outline-none focus:border-blue-500" value={formulario.precio} onChange={manejarCambio} required/></div>
+                        <div><label className="block text-xs font-black text-slate-500 mb-1">CANTIDAD BODEGA</label><input type="number" name="stock" className="w-full bg-slate-50 border-2 border-slate-300 p-3 rounded-xl font-black text-blue-700 outline-none focus:border-blue-500" value={formulario.stock} onChange={manejarCambio} required/></div>
                         
                         <div className="md:col-span-2"><label className="block text-xs font-black text-slate-500 mb-1">MARCA FABRICANTE</label><select name="marca_id" className="w-full bg-slate-50 border-2 border-slate-300 p-3 rounded-xl font-bold outline-none" value={formulario.marca_id} onChange={manejarCambio}>{marcasLista.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select></div>
                         <div className="md:col-span-2"><label className="block text-xs font-black text-slate-500 mb-1">CATEGORÍA</label><select name="categoria_id" className="w-full bg-slate-50 border-2 border-slate-300 p-3 rounded-xl font-bold outline-none" value={formulario.categoria_id} onChange={manejarCambio}>{categoriasLista.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select></div>
                         
-                        <div className="md:col-span-4"><label className="block text-xs font-black text-slate-500 mb-1">DESCRIPCIÓN</label><input type="text" name="descripcion" className="w-full bg-slate-50 border-2 border-slate-300 p-3 rounded-xl font-bold outline-none" value={formulario.descripcion} onChange={manejarCambio} required/></div>
+                        <div className="md:col-span-4"><label className="block text-xs font-black text-slate-500 mb-1">DESCRIPCIÓN COMERCIAL</label><input type="text" name="descripcion" className="w-full bg-slate-50 border-2 border-slate-300 p-3 rounded-xl font-bold outline-none focus:border-blue-500" value={formulario.descripcion} onChange={manejarCambio} required/></div>
                         
-                        {/* SELECTOR DE VEHÍCULOS COMPATIBLES (NUEVO) */}
+                        {/* 📸 CAMPO DE FOTO REINSTALADO CORRECTAMENTE */}
+                        <div className="md:col-span-4"><label className="block text-xs font-black text-slate-500 mb-1">IMAGEN / FOTO DEL RECAMBIO {repuestoEditando && '(Dejar vacío para mantener actual)'}</label><input id="inputImagen" type="file" accept="image/*" onChange={(e) => setImagenArchivo(e.target.files[0])} className="w-full text-sm font-bold text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-blue-100 file:text-blue-800 cursor-pointer"/></div>
+
                         <div className="md:col-span-4 bg-slate-50 p-4 rounded-xl border-2 border-slate-200">
-                            <label className="block text-sm font-black text-indigo-700 mb-3">🚗 ¿A QUÉ VEHÍCULOS LE SIRVE ESTE REPUESTO?</label>
+                            <label className="block text-sm font-black text-indigo-700 mb-3">🚗 VEHÍCULOS COMPATIBLES CON ESTA PIEZA</label>
                             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-h-40 overflow-y-auto">
                                 {vehiculosLista.map(v => (
                                     <label key={v.id} className="flex items-center gap-2 cursor-pointer bg-white p-2 border rounded-lg hover:bg-indigo-50">
@@ -290,22 +263,25 @@ function Admin() {
                                         <span className="text-xs font-bold text-slate-700 truncate">{v.marca_auto} {v.modelo}</span>
                                     </label>
                                 ))}
-                                {vehiculosLista.length === 0 && <span className="text-xs font-bold text-slate-400">Agrega vehículos primero en la pestaña "Autos/Motos"</span>}
                             </div>
                         </div>
-
                     </div>
-                    <button type="submit" className={`w-full text-white font-black text-lg py-4 rounded-xl shadow-md ${repuestoEditando ? 'bg-orange-500' : 'bg-slate-900'}`}>{repuestoEditando ? 'ACTUALIZAR REPUESTO' : 'GUARDAR NUEVO REPUESTO'}</button>
+                    <button type="submit" className={`w-full text-white font-black text-lg py-4 rounded-xl shadow-md ${repuestoEditando ? 'bg-orange-500 hover:bg-orange-600' : 'bg-slate-900 hover:bg-slate-800'}`}>{repuestoEditando ? 'ACTUALIZAR EN INVENTARIO' : 'REGISTRAR EN INVENTARIO'}</button>
                 </form>
             </div>
 
             <div className="bg-white rounded-2xl border-2 border-slate-200 overflow-hidden shadow-sm">
-                <table className="w-full text-left"><thead className="bg-slate-900 text-white"><tr className="font-black text-xs uppercase"><th className="p-4">Código / Descripción</th><th className="p-4">Vehículos Compatibles</th><th className="p-4">PVP</th><th className="p-4 text-center">Stock</th><th className="p-4 text-right">Controles</th></tr></thead>
+                <table className="w-full text-left"><thead className="bg-slate-900 text-white"><tr className="font-black text-xs uppercase"><th className="p-4">Código / Descripción</th><th className="p-4">Compatibilidad</th><th className="p-4">PVP</th><th className="p-4 text-center">Stock</th><th className="p-4 text-right">Controles</th></tr></thead>
                 <tbody className="divide-y-2 divide-slate-100">
                     {inventario.map(p => (
                         <tr key={p.id} className="hover:bg-slate-50">
-                            <td className="p-4"><p className="font-black text-slate-900">{p.codigo_pieza}</p><p className="text-xs font-bold text-slate-500 truncate max-w-[200px]">{p.descripcion}</p></td>
-                            <td className="p-4"><p className="text-xs font-bold text-indigo-600 bg-indigo-50 p-1.5 rounded inline-block truncate max-w-[200px]">{p.vehiculos_nombres || 'Ninguno asignado'}</p></td>
+                            <td className="p-4">
+                                <div className="flex items-center gap-4">
+                                    <img src={p.imagen_url || "https://cdn-icons-png.flaticon.com/512/3063/3063822.png"} className="w-12 h-12 object-contain rounded-lg border bg-white" />
+                                    <div><p className="font-black text-slate-900">{p.codigo_pieza}</p><p className="text-xs font-bold text-slate-500 truncate max-w-[200px]">{p.descripcion}</p></div>
+                                </div>
+                            </td>
+                            <td className="p-4"><p className="text-xs font-bold text-indigo-600 bg-indigo-50 p-1.5 rounded inline-block truncate max-w-[200px]">{p.vehiculos_nombres || 'Genérico / Universal'}</p></td>
                             <td className="p-4 font-black text-emerald-600 text-lg">${p.precio}</td>
                             <td className="p-4 text-center"><span className={`px-3 py-1 rounded-full text-xs font-black ${p.stock > 0 ? 'bg-blue-100 text-blue-800' : 'bg-red-100 text-red-800'}`}>{p.stock}</span></td>
                             <td className="p-4 flex gap-2 justify-end">
@@ -319,35 +295,78 @@ function Admin() {
         </div>
       )}
 
-      {/* PESTAÑA CONFIGURACIÓN */}
+      {/* COMPATIBILIDAD AUTOS / MOTOS */}
+      {tabActiva === 'VEHICULOS' && (
+        <div className="bg-white p-6 rounded-2xl border-2 border-slate-200 shadow-sm">
+            <h3 className="font-black text-slate-900 text-lg mb-6">🚗 Catálogo de Modelos (Línea de Compatibilidad)</h3>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+                <div><label className="block text-xs font-black text-slate-500 mb-1">MARCA MOTOR (Ej: Chevrolet, Yamaha)</label><input type="text" className="w-full border-2 border-slate-300 p-3 rounded-xl font-bold outline-none" value={nuevoVehiculo.marca_auto} onChange={e=>setNuevoVehiculo({...nuevoVehiculo, ...{marca_auto: e.target.value}})}/></div>
+                <div className="md:col-span-2"><label className="block text-xs font-black text-slate-500 mb-1">MODELO EXACTO (Ej: Aveo 2006-2015 / DT 125)</label><input type="text" className="w-full border-2 border-slate-300 p-3 rounded-xl font-bold outline-none" value={nuevoVehiculo.modelo} onChange={e=>setNuevoVehiculo({...nuevoVehiculo, ...{modelo: e.target.value}})}/></div>
+                <div className="flex items-end"><button onClick={()=>{ if(nuevoVehiculo.marca_auto==='' || nuevoVehiculo.modelo==='') return alert('Llenar campos mandatorios'); accionSimple('vehiculos','POST',nuevoVehiculo); }} className="w-full bg-indigo-600 text-white p-3 rounded-xl font-black hover:bg-indigo-700 shadow-md">Registrar Línea</button></div>
+            </div>
+            <div className="max-h-96 overflow-y-auto space-y-2">
+                {vehiculosLista.map(v=>(
+                    <div key={v.id} className="flex justify-between items-center p-4 bg-slate-50 border-2 border-slate-100 rounded-xl shadow-sm">
+                        <span className="font-black text-slate-900 text-base">🚘 {v.marca_auto} {v.modelo}</span>
+                        <button onClick={()=>accionSimple(`vehiculos/${v.id}`,'DELETE')} className="text-red-600 bg-red-50 px-3 py-1.5 rounded-lg font-black hover:bg-red-100 transition">Retirar</button>
+                    </div>
+                ))}
+            </div>
+        </div>
+      )}
+
+      {/* AUDITORÍA DE PAGOS CON CAPTURES VISUALES */}
+      {tabActiva === 'AUDITORIA' && (
+        <div className="bg-white rounded-2xl border-2 border-slate-200 shadow-sm overflow-hidden">
+            <div className="p-6 bg-slate-900 text-white"><h2 className="text-xl font-black">💰 Conciliación y Auditoría Manual de Ventas</h2></div>
+            <div className="overflow-x-auto p-6">
+                <table className="w-full text-left">
+                    <thead className="bg-slate-100"><tr className="font-black text-sm uppercase"><th className="p-4">Factura</th><th className="p-4">Fecha</th><th className="p-4">Método</th><th className="p-4 text-center">Monto</th><th className="p-4 text-center">Capture Digital</th><th className="p-4 text-right">Estatus</th></tr></thead>
+                    <tbody className="divide-y-2 divide-slate-100">
+                        {ventasList.map(v => (
+                            <tr key={v.id} className="hover:bg-slate-50 transition">
+                                <td className="p-4 font-black text-blue-600">#FAC-00{v.id}</td>
+                                <td className="p-4 font-bold text-slate-500 text-xs">{new Date(v.fecha).toLocaleString()}</td>
+                                <td className="p-4 font-black text-slate-700">{v.metodo_pago}</td>
+                                <td className="p-4 font-black text-emerald-600 text-xl text-center">${v.total}</td>
+                                <td className="p-4 text-center">
+                                    {v.comprobante_url ? <a href={v.comprobante_url} target="_blank" rel="noreferrer" className="bg-blue-100 text-blue-700 px-3 py-1.5 rounded-xl font-black text-xs hover:bg-blue-200 transition">🔍 Abrir Comprobante</a> : <span className="text-slate-400 font-bold text-xs italic">No requiere / Sin capture</span>}
+                                </td>
+                                <td className="p-4 text-right">
+                                    {v.estado === 'Validado' ? ( <span className="bg-emerald-100 text-emerald-800 px-3 py-2 rounded-lg font-black text-sm">✅ Pago Conciliado</span> ) : ( <button onClick={()=>accionSimple(`ventas/${v.id}/validar`,'PUT')} className="bg-orange-500 hover:bg-orange-600 text-white px-3 py-2 rounded-lg font-black shadow-md text-sm transition">Validar Transacción</button> )}
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+      )}
+
+      {/* CONFIGURACIÓN */}
       {tabActiva === 'CONFIG' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-white p-6 rounded-2xl border-2 border-slate-200">
-                <h3 className="font-black text-slate-900 text-lg mb-4">🏷️ Añadir Marcas de Repuestos</h3>
+                <h3 className="font-black text-slate-900 text-lg mb-4">🏷️ Marcas Fabricantes</h3>
                 <div className="flex gap-2 mb-6">
-                    <input type="text" placeholder="Nueva Marca (Ej: Bosh)..." className="border-2 border-slate-300 p-3 rounded-xl flex-1 font-bold outline-none" value={nuevaMarca} onChange={e=>setNuevaMarca(e.target.value)}/>
+                    <input type="text" placeholder="Ej: Bosch" className="border-2 p-3 rounded-xl flex-1 font-bold outline-none" value={nuevaMarca} onChange={e=>setNuevaMarca(e.target.value)}/>
                     <button onClick={()=>{ if(nuevaMarca.trim()==="")return; accionSimple('marcas','POST',{nombre:nuevaMarca}); }} className="bg-slate-900 text-white px-5 rounded-xl font-black">Añadir</button>
                 </div>
-                <div className="max-h-80 overflow-y-auto space-y-2">
+                <div className="max-h-60 overflow-y-auto space-y-2">
                     {marcasLista.map(m=>(
-                        <div key={m.id} className="flex justify-between items-center p-3 bg-slate-50 border-2 border-slate-100 rounded-xl">
-                            <span className="font-black text-slate-700">{m.nombre}</span><button onClick={()=>accionSimple(`marcas/${m.id}`,'DELETE')} className="text-red-500 bg-red-50 w-8 h-8 rounded-lg font-black hover:bg-red-100">X</button>
-                        </div>
+                        <div key={m.id} className="flex justify-between items-center p-3 bg-slate-50 border rounded-xl"><span className="font-black text-slate-700">{m.nombre}</span><button onClick={()=>accionSimple(`marcas/${m.id}`,'DELETE')} className="text-red-500 font-black">X</button></div>
                     ))}
                 </div>
             </div>
-            
             <div className="bg-white p-6 rounded-2xl border-2 border-slate-200">
-                <h3 className="font-black text-slate-900 text-lg mb-4">📂 Categorías</h3>
+                <h3 className="font-black text-slate-900 text-lg mb-4">📂 Categorías Estructurales</h3>
                 <div className="flex gap-2 mb-6">
-                    <input type="text" placeholder="Ej: Suspensión..." className="border-2 border-slate-300 p-3 rounded-xl flex-1 font-bold outline-none" value={nuevaCategoria} onChange={e=>setNuevaCategoria(e.target.value)}/>
+                    <input type="text" placeholder="Ej: Motor" className="border-2 p-3 rounded-xl flex-1 font-bold outline-none" value={nuevaCategoria} onChange={e=>setNuevaCategoria(e.target.value)}/>
                     <button onClick={()=>{ if(nuevaCategoria.trim()==="")return; accionSimple('categorias','POST',{nombre:nuevaCategoria}); }} className="bg-slate-900 text-white px-5 rounded-xl font-black">Añadir</button>
                 </div>
-                <div className="max-h-80 overflow-y-auto space-y-2">
+                <div className="max-h-60 overflow-y-auto space-y-2">
                     {categoriasLista.map(c=>(
-                        <div key={c.id} className="flex justify-between items-center p-3 bg-slate-50 border-2 border-slate-100 rounded-xl">
-                            <span className="font-black text-slate-700">{c.nombre}</span><button onClick={()=>accionSimple(`categorias/${c.id}`,'DELETE')} className="text-red-500 bg-red-50 w-8 h-8 rounded-lg font-black hover:bg-red-100">X</button>
-                        </div>
+                        <div key={c.id} className="flex justify-between items-center p-3 bg-slate-50 border rounded-xl"><span className="font-black text-slate-700">{c.nombre}</span><button onClick={()=>accionSimple(`categorias/${c.id}`,'DELETE')} className="text-red-500 font-black">X</button></div>
                     ))}
                 </div>
             </div>
