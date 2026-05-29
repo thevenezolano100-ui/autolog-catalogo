@@ -7,32 +7,19 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      workbox: {
-        // Esto obliga al navegador a descargar toda la interfaz visual para uso offline
-        globPatterns: ['**/*.{js,css,html,ico,png,svg}']
-      },
+      workbox: { globPatterns: ['**/*.{js,css,html,ico,png,svg}'] },
       manifest: {
-        name: 'Rosa Store - AutoLog POS',
-        short_name: 'RosaStore',
+        name: 'Catálogo Repuestos - AutoLog',
+        short_name: 'Catálogo',
         description: 'Punto de Venta B2B y Catálogo Offline',
-        theme_color: '#0f172a', // Color oscuro elegante para la barra superior
+        theme_color: '#0f172a',
         background_color: '#f8fafc',
-        display: 'standalone', // Hace que se vea como una app nativa sin la barra de Chrome
+        display: 'standalone',
         scope: '/',
         start_url: '/',
         icons: [
-          {
-            src: '/vite.svg', // Usamos el logo por defecto de Vite por ahora
-            sizes: '192x192',
-            type: 'image/svg+xml',
-            purpose: 'any maskable'
-          },
-          {
-            src: '/vite.svg',
-            sizes: '512x512',
-            type: 'image/svg+xml',
-            purpose: 'any maskable'
-          }
+          { src: '/vite.svg', sizes: '192x192', type: 'image/svg+xml', purpose: 'any maskable' },
+          { src: '/vite.svg', sizes: '512x512', type: 'image/svg+xml', purpose: 'any maskable' }
         ]
       }
     })
