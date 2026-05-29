@@ -6,24 +6,28 @@ const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
 const app = express();
-const PORT = 3000;
+// 🔴 CORRECCIÓN CRÍTICA: Permitir que Render controle el puerto en la nube
+const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
 
 // ===============================================
-// 1. TUS CREDENCIALES (¡NO OLVIDES CAMBIARLAS!)
+// 1. TUS CREDENCIALES
 // ===============================================
-const ENLACE_NEON = 'postgresql://neondb_owner:npg_GSfl19XITPFj@ep-wispy-bonus-anshmeg3.c-6.us-east-1.aws.neon.tech/neondb?sslmode=require';
-const CLOUD_NAME = 'ddrqga65e';
-const API_KEY = '781739566125483';
-const API_SECRET = '0Yja9-EHbn8ESfClJEuKitLi35k';
+const ENLACE_NEON = 'AQUI_PONES_TU_ENLACE_DE_NEON_TECH';
+const CLOUD_NAME = 'TU_CLOUD_NAME';
+const API_KEY = 'TU_API_KEY';
+const API_SECRET = 'TU_API_SECRET';
 
 // ===============================================
-// 2. CONEXIÓN A BASE DE DATOS (NEON)
+// 2. CONEXIÓN BLINDADA A NEON
 // ===============================================
 let pool;
 try {
+    // Si el enlace no empieza con postgres, sabemos que es el de prueba y lo bloqueamos sin apagar el servidor
+    if (!ENLACE_NEON.startsWith('postgres')) throw new Error("Falta enlace real");
+    
     pool = new Pool({ connectionString: ENLACE_NEON });
     pool.query(`
         CREATE TABLE IF NOT EXISTS usuarios (id SERIAL PRIMARY KEY, nombre_usuario VARCHAR(50), contrasena VARCHAR(50));
@@ -36,11 +40,12 @@ try {
         CREATE TABLE IF NOT EXISTS detalles_venta (id SERIAL PRIMARY KEY, venta_id INT, producto_id INT, cantidad INT, precio_unitario DECIMAL(10, 2), subtotal DECIMAL(10, 2));
     `).catch(err => console.log("Aviso interno BD:", err.message));
 } catch (error) {
-    console.error("⚠️ Enlace de Neon inválido.");
+    console.warn("⚠️ Servidor en Modo Restringido: Faltan credenciales de Neon en index.js");
+    pool = { query: async () => { throw new Error("Debes colocar tu enlace de Neon.tech en el archivo index.js para que esto funcione.") } };
 }
 
 // ===============================================
-// 3. CONEXIÓN A IMÁGENES (CLOUDINARY)
+// 3. CONEXIÓN BLINDADA A CLOUDINARY
 // ===============================================
 let upload;
 if (CLOUD_NAME === 'TU_CLOUD_NAME' || !CLOUD_NAME) {
