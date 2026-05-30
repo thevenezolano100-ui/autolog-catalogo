@@ -30,4 +30,6 @@ const guardarVehiculo = async () => {
         setMensaje('');
         alert(`❌ Falla de Servidor (Caído): ${e.message}`);
     }
+
   };
+  export default Admin;
