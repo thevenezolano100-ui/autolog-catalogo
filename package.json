@@ -1,42 +1,17 @@
 {
+  "name": "autolog-backend",
+  "version": "1.0.0",
+  "description": "Servidor Backend para Catálogo Repuestos",
+  "main": "src/index.js",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "start": "node src/index.js"
   },
   "dependencies": {
     "cloudinary": "^1.41.3",
-    "cors": "^2.8.6",
-    "express": "^5.2.1",
-    "localforage": "^1.10.0",
-    "multer": "^2.1.1",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "multer": "^1.4.5-lts.1",
     "multer-storage-cloudinary": "^4.0.0",
-    "pg": "^8.21.0",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0"
-  },
-  "devDependencies": {
-    "@vitejs/plugin-react": "^4.2.0",
-    "autoprefixer": "^10.4.16",
-    "postcss": "^8.4.32",
-    "tailwindcss": "^3.4.1",
-    "vite": "^5.0.0",
-    "vite-plugin-pwa": "^0.17.4"
-  },
-  "name": "catalogo-repuestos",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/thevenezolano100-ui/autolog-catalogo.git"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "bugs": {
-    "url": "https://github.com/thevenezolano100-ui/autolog-catalogo/issues"
-  },
-  "homepage": "https://github.com/thevenezolano100-ui/autolog-catalogo#readme"
+    "pg": "^8.11.3"
+  }
 }
